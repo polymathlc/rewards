@@ -1,0 +1,771 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Rewards</title>
+<style>
+  :root {
+    --bg: #f6f7fb;
+    --card: #ffffff;
+    --ink: #1a1f2e;
+    --muted: #6b7383;
+    --line: #e6e8ef;
+    --brand: #4f46e5;
+    --brand-ink: #ffffff;
+    --good: #16a34a;
+    --bad: #dc2626;
+    --warn: #f59e0b;
+    --chip: #eef0f7;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+  a { color: var(--brand); text-decoration: none; }
+  button { font: inherit; cursor: pointer; }
+  input, select, textarea {
+    font: inherit; color: var(--ink); background: #fff;
+    border: 1px solid var(--line); border-radius: 8px; padding: 9px 11px; width: 100%;
+  }
+  input:focus, select:focus, textarea:focus { outline: 2px solid #c7c9ff; border-color: var(--brand); }
+  label { display: block; font-size: 13px; color: var(--muted); margin-bottom: 4px; }
+  .field { margin-bottom: 12px; }
+  .btn { background: var(--brand); color: var(--brand-ink); border: 0; padding: 10px 16px; border-radius: 8px; font-weight: 600; }
+  .btn.ghost { background: #fff; color: var(--ink); border: 1px solid var(--line); }
+  .btn.danger { background: var(--bad); }
+  .btn.warn { background: var(--warn); color: #422006; }
+  .btn:disabled { opacity: .5; cursor: not-allowed; }
+  .row { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+  .grow { flex: 1; }
+  .chip { background: var(--chip); border-radius: 999px; padding: 3px 10px; font-size: 12px; color: var(--muted); }
+  .muted { color: var(--muted); }
+  .pill { display: inline-block; background: #eef2ff; color: var(--brand); border-radius: 999px; padding: 2px 10px; font-size: 12px; font-weight: 600; }
+  .topbar {
+    background: #fff; border-bottom: 1px solid var(--line);
+    padding: 10px 18px; display: flex; align-items: center; gap: 12px;
+  }
+  .topbar h1 { font-size: 18px; margin: 0; }
+  .topbar .spacer { flex: 1; }
+  .container { max-width: 1080px; margin: 0 auto; padding: 18px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 16px; margin-bottom: 16px; }
+  .tabs { display: flex; gap: 6px; margin-bottom: 16px; flex-wrap: wrap; }
+  .tab { padding: 8px 14px; border-radius: 999px; background: #fff; border: 1px solid var(--line); color: var(--ink); }
+  .tab.active { background: var(--brand); color: #fff; border-color: var(--brand); }
+  .grid { display: grid; gap: 14px; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); }
+  .reward-card { background: #fff; border: 1px solid var(--line); border-radius: 12px; overflow: hidden; display: flex; flex-direction: column; }
+  .reward-card img { width: 100%; aspect-ratio: 4/3; object-fit: cover; background: #f0f1f5; }
+  .reward-card .body { padding: 10px 12px; display: flex; flex-direction: column; gap: 6px; flex: 1; }
+  .reward-card .title { font-weight: 600; }
+  .reward-card .foot { display: flex; gap: 8px; align-items: center; justify-content: space-between; padding: 10px 12px; border-top: 1px solid var(--line); }
+  .table { width: 100%; border-collapse: collapse; }
+  .table th, .table td { padding: 9px 10px; border-bottom: 1px solid var(--line); text-align: left; font-size: 14px; vertical-align: middle; }
+  .table th { font-weight: 600; color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .04em; }
+  .center { text-align: center; }
+  .login-wrap { min-height: 100vh; display: grid; place-items: center; padding: 24px; }
+  .login-card { background: #fff; padding: 28px; border-radius: 16px; border: 1px solid var(--line); max-width: 380px; width: 100%; text-align: center; }
+  .gbtn { display: inline-flex; align-items: center; gap: 10px; background: #fff; color: #3c4043; border: 1px solid #dadce0; padding: 10px 16px; border-radius: 8px; font-weight: 600; }
+  .gbtn img { width: 18px; height: 18px; }
+  .paste-zone {
+    border: 2px dashed var(--line); border-radius: 10px; padding: 26px; text-align: center;
+    color: var(--muted); background: #fafbff;
+  }
+  .paste-zone.has { padding: 8px; border-style: solid; background: #fff; }
+  .paste-zone img { max-width: 100%; max-height: 220px; border-radius: 6px; display: block; margin: 0 auto; }
+  .toast { position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%); background: #1a1f2e; color: #fff; padding: 10px 16px; border-radius: 8px; opacity: 0; transition: opacity .2s; pointer-events: none; z-index: 100; }
+  .toast.show { opacity: 1; }
+  .modal-bg { position: fixed; inset: 0; background: rgba(20,24,40,.55); display: none; align-items: center; justify-content: center; z-index: 50; padding: 16px; }
+  .modal-bg.show { display: flex; }
+  .modal { background: #fff; border-radius: 14px; width: 100%; max-width: 460px; padding: 20px; }
+  .hidden { display: none !important; }
+  .balance-big { font-size: 38px; font-weight: 700; }
+  .small { font-size: 13px; }
+  @media (max-width: 600px) {
+    .container { padding: 12px; }
+    .card { padding: 12px; }
+  }
+</style>
+</head>
+<body>
+
+<!-- ============================================================
+     FIREBASE SETUP (REQUIRED)
+     1. Go to https://console.firebase.google.com and create a project
+     2. Enable Authentication > Sign-in method > Google
+     3. Enable Firestore Database (start in test mode, then add rules)
+     4. Project settings > General > Your apps > Web app > copy config
+     5. Paste the values below in place of the YOUR_* placeholders
+     6. Recommended Firestore rules:
+        rules_version = '2';
+        service cloud.firestore {
+          match /databases/{database}/documents {
+            function isAdmin() {
+              return request.auth != null && request.auth.token.email == 'chungzhikai@gmail.com';
+            }
+            match /students/{id} {
+              allow read: if request.auth != null;
+              allow write: if isAdmin() ||
+                (request.auth != null && request.resource.data.uid == request.auth.uid
+                 && resource.data.uid == null);
+            }
+            match /rewards/{id} {
+              allow read: if request.auth != null;
+              allow write: if isAdmin();
+            }
+            match /claims/{id} {
+              allow read: if isAdmin() ||
+                (request.auth != null && resource.data.uid == request.auth.uid);
+              allow create: if request.auth != null && request.resource.data.uid == request.auth.uid;
+              allow update, delete: if isAdmin();
+            }
+          }
+        }
+     ============================================================ -->
+
+<div class="login-wrap" id="loginView">
+  <div class="login-card">
+    <h1 style="margin:0 0 8px">Rewards</h1>
+    <p class="muted" style="margin:0 0 18px">Sign in with your Google account to continue.</p>
+    <button class="gbtn" id="loginBtn">
+      <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" alt="" />
+      Sign in with Google
+    </button>
+    <p class="muted small" id="loginErr" style="margin-top:14px; color: var(--bad);"></p>
+  </div>
+</div>
+
+<div id="app" class="hidden">
+  <div class="topbar">
+    <h1>Rewards</h1>
+    <span class="chip" id="roleChip"></span>
+    <div class="spacer"></div>
+    <span class="muted small" id="userEmail"></span>
+    <button class="btn ghost" id="logoutBtn">Sign out</button>
+  </div>
+  <div class="container">
+
+    <!-- ADMIN -->
+    <div id="adminView" class="hidden">
+      <div class="tabs">
+        <button class="tab active" data-tab="adm-students">Students</button>
+        <button class="tab" data-tab="adm-rewards">Rewards</button>
+        <button class="tab" data-tab="adm-claims">Pending shipments <span class="pill" id="pendingPill" style="margin-left:6px; display:none;">0</span></button>
+      </div>
+
+      <!-- Students tab -->
+      <div id="adm-students" class="tab-pane">
+        <div class="card">
+          <h3 style="margin-top:0">Add student</h3>
+          <div class="row">
+            <div class="grow field"><label>Name</label><input id="sName" placeholder="e.g. Aisha Tan" /></div>
+            <div class="grow field"><label>Level</label><input id="sLevel" placeholder="e.g. P5" /></div>
+            <div class="grow field"><label>Time slot</label><input id="sSlot" placeholder="e.g. Mon 4-6pm" /></div>
+            <div class="field" style="width:120px"><label>Starting marks</label><input id="sMarks" type="number" value="0" /></div>
+          </div>
+          <button class="btn" id="addStudentBtn">Add student</button>
+        </div>
+        <div class="card">
+          <h3 style="margin-top:0">All students</h3>
+          <div class="row" style="margin-bottom:10px">
+            <input id="studentSearch" placeholder="Search by name, level, slot…" class="grow" />
+          </div>
+          <div style="overflow-x:auto">
+            <table class="table" id="studentsTable">
+              <thead><tr><th>Name</th><th>Level</th><th>Slot</th><th>Marks</th><th>Linked</th><th></th></tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- Rewards tab -->
+      <div id="adm-rewards" class="tab-pane hidden">
+        <div class="card">
+          <h3 style="margin-top:0">Add reward</h3>
+          <p class="muted small" style="margin-top:-6px">Click the box below, then paste an image (Ctrl/Cmd+V).</p>
+          <div class="paste-zone" id="pasteZone" tabindex="0">Click here and paste an image</div>
+          <div class="row" style="margin-top:12px">
+            <div class="grow field"><label>Reward name</label><input id="rName" placeholder="e.g. Pencil case" /></div>
+            <div class="field" style="width:160px"><label>Marks required</label><input id="rMarks" type="number" value="10" /></div>
+            <div class="field" style="width:140px"><label>Stock (optional)</label><input id="rStock" type="number" placeholder="∞" /></div>
+          </div>
+          <button class="btn" id="addRewardBtn">Add reward</button>
+        </div>
+        <div class="card">
+          <h3 style="margin-top:0">All rewards</h3>
+          <div class="grid" id="adminRewards"></div>
+        </div>
+      </div>
+
+      <!-- Claims tab -->
+      <div id="adm-claims" class="tab-pane hidden">
+        <div class="card">
+          <h3 style="margin-top:0">Pending shipments</h3>
+          <div style="overflow-x:auto">
+            <table class="table" id="claimsTable">
+              <thead><tr><th>When</th><th>Student</th><th>Reward</th><th>Marks</th><th>Address</th><th>Status</th><th></th></tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- STUDENT: first-time setup -->
+    <div id="setupView" class="hidden">
+      <div class="card">
+        <h2 style="margin-top:0">Welcome! Let's find you.</h2>
+        <p class="muted">Choose your level and class time, then pick your name.</p>
+        <div class="field"><label>Level</label><select id="pickLevel"><option value="">— choose —</option></select></div>
+        <div class="field"><label>Time slot</label><select id="pickSlot" disabled><option value="">— choose level first —</option></select></div>
+        <div class="field"><label>Your name</label><select id="pickName" disabled><option value="">— choose slot first —</option></select></div>
+        <button class="btn" id="linkStudentBtn" disabled>That's me</button>
+        <p class="small muted" style="margin-top:10px">Can't find your name? Ask the teacher to add you.</p>
+      </div>
+    </div>
+
+    <!-- STUDENT: main -->
+    <div id="studentView" class="hidden">
+      <div class="card">
+        <div class="row">
+          <div class="grow">
+            <div class="muted small">Signed in as</div>
+            <div style="font-weight:600" id="studentNameTop">—</div>
+            <div class="muted small" id="studentClassTop"></div>
+          </div>
+          <div style="text-align:right">
+            <div class="muted small">Your marks</div>
+            <div class="balance-big" id="balanceNum">0</div>
+          </div>
+        </div>
+      </div>
+      <div class="card">
+        <h3 style="margin-top:0">Choose your reward</h3>
+        <div class="grid" id="studentRewards"></div>
+      </div>
+      <div class="card">
+        <h3 style="margin-top:0">My past claims</h3>
+        <div style="overflow-x:auto">
+          <table class="table" id="myClaims">
+            <thead><tr><th>When</th><th>Reward</th><th>Marks</th><th>Status</th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- Modals -->
+<div class="modal-bg" id="modalBg">
+  <div class="modal" id="modal"></div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<script>
+// ============================================================
+// PASTE YOUR FIREBASE CONFIG HERE
+// ============================================================
+const firebaseConfig = {
+  apiKey: "YOUR_API_KEY",
+  authDomain: "YOUR_PROJECT.firebaseapp.com",
+  projectId: "YOUR_PROJECT_ID",
+  storageBucket: "YOUR_PROJECT.appspot.com",
+  messagingSenderId: "YOUR_SENDER_ID",
+  appId: "YOUR_APP_ID"
+};
+const ADMIN_EMAIL = "chungzhikai@gmail.com";
+// ============================================================
+
+firebase.initializeApp(firebaseConfig);
+const auth = firebase.auth();
+const db = firebase.firestore();
+
+const $ = (id) => document.getElementById(id);
+const show = (el) => el.classList.remove("hidden");
+const hide = (el) => el.classList.add("hidden");
+
+function toast(msg) {
+  const t = $("toast");
+  t.textContent = msg;
+  t.classList.add("show");
+  clearTimeout(toast._t);
+  toast._t = setTimeout(() => t.classList.remove("show"), 2200);
+}
+
+function openModal(html) {
+  $("modal").innerHTML = html;
+  $("modalBg").classList.add("show");
+}
+function closeModal() { $("modalBg").classList.remove("show"); }
+$("modalBg").addEventListener("click", (e) => { if (e.target.id === "modalBg") closeModal(); });
+
+function escapeHtml(s) {
+  return String(s ?? "").replace(/[&<>"']/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;" }[c]));
+}
+function fmtTime(ts) {
+  if (!ts) return "";
+  const d = ts.toDate ? ts.toDate() : new Date(ts);
+  return d.toLocaleString();
+}
+
+// ---------- AUTH ----------
+$("loginBtn").addEventListener("click", async () => {
+  try {
+    const provider = new firebase.auth.GoogleAuthProvider();
+    await auth.signInWithPopup(provider);
+  } catch (e) {
+    $("loginErr").textContent = e.message || "Sign-in failed.";
+  }
+});
+$("logoutBtn").addEventListener("click", () => auth.signOut());
+
+let currentUser = null;
+let myStudent = null;            // student doc {id,...} once linked
+let unsubStudents, unsubRewards, unsubClaims, unsubMyClaims, unsubMyStudent;
+
+auth.onAuthStateChanged(async (user) => {
+  // Tear down any prior listeners
+  [unsubStudents, unsubRewards, unsubClaims, unsubMyClaims, unsubMyStudent].forEach(fn => { try { fn && fn(); } catch{} });
+  unsubStudents = unsubRewards = unsubClaims = unsubMyClaims = unsubMyStudent = null;
+  myStudent = null;
+
+  if (!user) {
+    currentUser = null;
+    show($("loginView")); hide($("app"));
+    return;
+  }
+  currentUser = user;
+  hide($("loginView")); show($("app"));
+  $("userEmail").textContent = user.email;
+
+  const isAdmin = (user.email || "").toLowerCase() === ADMIN_EMAIL.toLowerCase();
+  $("roleChip").textContent = isAdmin ? "Admin" : "Student";
+
+  if (isAdmin) {
+    show($("adminView")); hide($("setupView")); hide($("studentView"));
+    bootAdmin();
+  } else {
+    hide($("adminView"));
+    bootStudent();
+  }
+});
+
+// ---------- ADMIN ----------
+document.querySelectorAll(".tab").forEach(tab => {
+  tab.addEventListener("click", () => {
+    document.querySelectorAll(".tab").forEach(t => t.classList.remove("active"));
+    document.querySelectorAll(".tab-pane").forEach(p => p.classList.add("hidden"));
+    tab.classList.add("active");
+    $(tab.dataset.tab).classList.remove("hidden");
+  });
+});
+
+function bootAdmin() {
+  // Add student
+  $("addStudentBtn").onclick = async () => {
+    const name = $("sName").value.trim();
+    const level = $("sLevel").value.trim();
+    const slot = $("sSlot").value.trim();
+    const marks = parseInt($("sMarks").value, 10) || 0;
+    if (!name || !level || !slot) return toast("Name, level and slot are required");
+    await db.collection("students").add({
+      name, level, slot, marks, uid: null, email: null,
+      createdAt: firebase.firestore.FieldValue.serverTimestamp()
+    });
+    $("sName").value = ""; $("sMarks").value = "0";
+    toast("Student added");
+  };
+
+  // Live students table
+  unsubStudents = db.collection("students").orderBy("name").onSnapshot(snap => {
+    const rows = []; const q = $("studentSearch").value.toLowerCase();
+    snap.forEach(doc => {
+      const s = { id: doc.id, ...doc.data() };
+      const hay = `${s.name} ${s.level} ${s.slot}`.toLowerCase();
+      if (q && !hay.includes(q)) return;
+      rows.push(`
+        <tr data-id="${s.id}">
+          <td>${escapeHtml(s.name)}</td>
+          <td>${escapeHtml(s.level)}</td>
+          <td>${escapeHtml(s.slot)}</td>
+          <td>
+            <input type="number" value="${s.marks||0}" data-field="marks" style="width:90px"/>
+          </td>
+          <td>${s.uid ? `<span class="chip">${escapeHtml(s.email||"linked")}</span>` : `<span class="muted small">unclaimed</span>`}</td>
+          <td style="text-align:right; white-space:nowrap">
+            <button class="btn ghost" data-act="save">Save</button>
+            <button class="btn ghost" data-act="unlink" ${s.uid ? "" : "disabled"}>Unlink</button>
+            <button class="btn ghost" data-act="del">Delete</button>
+          </td>
+        </tr>`);
+    });
+    $("studentsTable").querySelector("tbody").innerHTML = rows.join("") || `<tr><td colspan="6" class="center muted">No students yet</td></tr>`;
+  });
+  $("studentSearch").oninput = () => {
+    // re-trigger render by calling get once
+    db.collection("students").orderBy("name").get().then(snap => {
+      const rows = []; const q = $("studentSearch").value.toLowerCase();
+      snap.forEach(doc => {
+        const s = { id: doc.id, ...doc.data() };
+        const hay = `${s.name} ${s.level} ${s.slot}`.toLowerCase();
+        if (q && !hay.includes(q)) return;
+        rows.push(`
+          <tr data-id="${s.id}">
+            <td>${escapeHtml(s.name)}</td><td>${escapeHtml(s.level)}</td><td>${escapeHtml(s.slot)}</td>
+            <td><input type="number" value="${s.marks||0}" data-field="marks" style="width:90px"/></td>
+            <td>${s.uid ? `<span class="chip">${escapeHtml(s.email||"linked")}</span>` : `<span class="muted small">unclaimed</span>`}</td>
+            <td style="text-align:right; white-space:nowrap">
+              <button class="btn ghost" data-act="save">Save</button>
+              <button class="btn ghost" data-act="unlink" ${s.uid ? "" : "disabled"}>Unlink</button>
+              <button class="btn ghost" data-act="del">Delete</button>
+            </td>
+          </tr>`);
+      });
+      $("studentsTable").querySelector("tbody").innerHTML = rows.join("") || `<tr><td colspan="6" class="center muted">No students</td></tr>`;
+    });
+  };
+
+  $("studentsTable").addEventListener("click", async (e) => {
+    const btn = e.target.closest("button"); if (!btn) return;
+    const tr = e.target.closest("tr"); const id = tr?.dataset.id; if (!id) return;
+    const act = btn.dataset.act;
+    if (act === "save") {
+      const marks = parseInt(tr.querySelector('input[data-field="marks"]').value, 10) || 0;
+      await db.collection("students").doc(id).update({ marks });
+      toast("Saved");
+    } else if (act === "del") {
+      if (!confirm("Delete this student? This cannot be undone.")) return;
+      await db.collection("students").doc(id).delete();
+      toast("Deleted");
+    } else if (act === "unlink") {
+      if (!confirm("Unlink this student's Google account?")) return;
+      await db.collection("students").doc(id).update({ uid: null, email: null });
+      toast("Unlinked");
+    }
+  });
+
+  // Rewards: paste image
+  const pasteZone = $("pasteZone");
+  let pastedDataUrl = null;
+  pasteZone.addEventListener("click", () => pasteZone.focus());
+  pasteZone.addEventListener("paste", async (e) => {
+    const items = e.clipboardData?.items || [];
+    for (const it of items) {
+      if (it.type && it.type.startsWith("image/")) {
+        const file = it.getAsFile();
+        pastedDataUrl = await compressImage(file, 900, 0.82);
+        pasteZone.classList.add("has");
+        pasteZone.innerHTML = `<img src="${pastedDataUrl}" alt="reward preview" />`;
+        return;
+      }
+    }
+    toast("No image in clipboard");
+  });
+  pasteZone.addEventListener("dragover", e => e.preventDefault());
+  pasteZone.addEventListener("drop", async (e) => {
+    e.preventDefault();
+    const f = e.dataTransfer?.files?.[0];
+    if (f && f.type.startsWith("image/")) {
+      pastedDataUrl = await compressImage(f, 900, 0.82);
+      pasteZone.classList.add("has");
+      pasteZone.innerHTML = `<img src="${pastedDataUrl}" alt="reward preview" />`;
+    }
+  });
+
+  $("addRewardBtn").onclick = async () => {
+    const name = $("rName").value.trim();
+    const marks = parseInt($("rMarks").value, 10) || 0;
+    const stockStr = $("rStock").value;
+    const stock = stockStr === "" ? null : (parseInt(stockStr, 10) || 0);
+    if (!name) return toast("Reward name required");
+    if (!pastedDataUrl) return toast("Paste an image first");
+    if (pastedDataUrl.length > 900_000) return toast("Image too large, try a smaller one");
+    await db.collection("rewards").add({
+      name, marksRequired: marks, image: pastedDataUrl,
+      stock, active: true,
+      createdAt: firebase.firestore.FieldValue.serverTimestamp()
+    });
+    $("rName").value = ""; $("rMarks").value = "10"; $("rStock").value = "";
+    pastedDataUrl = null;
+    pasteZone.classList.remove("has");
+    pasteZone.innerHTML = "Click here and paste an image";
+    toast("Reward added");
+  };
+
+  unsubRewards = db.collection("rewards").orderBy("createdAt", "desc").onSnapshot(snap => {
+    const cards = [];
+    snap.forEach(doc => {
+      const r = { id: doc.id, ...doc.data() };
+      cards.push(`
+        <div class="reward-card" data-id="${r.id}">
+          <img src="${r.image}" alt="" />
+          <div class="body">
+            <div class="title">${escapeHtml(r.name)}</div>
+            <div class="muted small">${r.marksRequired} marks${r.stock!=null?` · stock ${r.stock}`:""}</div>
+          </div>
+          <div class="foot">
+            <span class="chip">${r.active ? "Active" : "Hidden"}</span>
+            <span>
+              <button class="btn ghost" data-act="toggle">${r.active?"Hide":"Show"}</button>
+              <button class="btn ghost" data-act="del">Delete</button>
+            </span>
+          </div>
+        </div>`);
+    });
+    $("adminRewards").innerHTML = cards.join("") || `<div class="muted">No rewards yet</div>`;
+  });
+  $("adminRewards").addEventListener("click", async (e) => {
+    const btn = e.target.closest("button"); if (!btn) return;
+    const id = e.target.closest(".reward-card")?.dataset.id; if (!id) return;
+    if (btn.dataset.act === "del") {
+      if (!confirm("Delete this reward?")) return;
+      await db.collection("rewards").doc(id).delete();
+      toast("Deleted");
+    } else if (btn.dataset.act === "toggle") {
+      const doc = await db.collection("rewards").doc(id).get();
+      await db.collection("rewards").doc(id).update({ active: !doc.data().active });
+    }
+  });
+
+  // Claims
+  unsubClaims = db.collection("claims").orderBy("createdAt", "desc").onSnapshot(snap => {
+    const rows = []; let pending = 0;
+    snap.forEach(doc => {
+      const c = { id: doc.id, ...doc.data() };
+      if (c.status === "pending") pending++;
+      rows.push(`
+        <tr data-id="${c.id}">
+          <td class="small">${fmtTime(c.createdAt)}</td>
+          <td>${escapeHtml(c.studentName)}<div class="muted small">${escapeHtml(c.studentClass||"")}</div></td>
+          <td>${escapeHtml(c.rewardName)}</td>
+          <td>${c.marksSpent}</td>
+          <td><div class="small">${escapeHtml(c.address)}</div></td>
+          <td><span class="chip">${c.status}</span></td>
+          <td style="text-align:right; white-space:nowrap">
+            ${c.status === "pending"
+              ? `<button class="btn" data-act="ship">Mark shipped</button>`
+              : `<button class="btn ghost" data-act="reopen">Reopen</button>`}
+            <button class="btn ghost" data-act="del">Delete</button>
+          </td>
+        </tr>`);
+    });
+    $("claimsTable").querySelector("tbody").innerHTML = rows.join("") || `<tr><td colspan="7" class="center muted">No claims yet</td></tr>`;
+    const pill = $("pendingPill");
+    if (pending > 0) { pill.style.display = "inline-block"; pill.textContent = pending; }
+    else pill.style.display = "none";
+  });
+  $("claimsTable").addEventListener("click", async (e) => {
+    const btn = e.target.closest("button"); if (!btn) return;
+    const id = e.target.closest("tr")?.dataset.id; if (!id) return;
+    if (btn.dataset.act === "ship") {
+      await db.collection("claims").doc(id).update({ status: "shipped", shippedAt: firebase.firestore.FieldValue.serverTimestamp() });
+      toast("Marked shipped");
+    } else if (btn.dataset.act === "reopen") {
+      await db.collection("claims").doc(id).update({ status: "pending" });
+    } else if (btn.dataset.act === "del") {
+      if (!confirm("Delete this claim record?")) return;
+      await db.collection("claims").doc(id).delete();
+    }
+  });
+}
+
+// ---------- STUDENT ----------
+async function bootStudent() {
+  // Find this user's linked student record (if any)
+  const q = await db.collection("students").where("uid", "==", currentUser.uid).limit(1).get();
+  if (!q.empty) {
+    const doc = q.docs[0];
+    myStudent = { id: doc.id, ...doc.data() };
+    showStudentMain();
+    return;
+  }
+  // First-time setup: pick level → slot → name
+  show($("setupView"));
+  hide($("studentView"));
+  const all = await db.collection("students").get();
+  const unclaimed = []; all.forEach(d => { const s = { id: d.id, ...d.data() }; if (!s.uid) unclaimed.push(s); });
+
+  const levels = [...new Set(unclaimed.map(s => s.level))].sort();
+  const levelSel = $("pickLevel"), slotSel = $("pickSlot"), nameSel = $("pickName");
+  levelSel.innerHTML = `<option value="">— choose —</option>` + levels.map(l => `<option>${escapeHtml(l)}</option>`).join("");
+  slotSel.innerHTML = `<option value="">— choose level first —</option>`; slotSel.disabled = true;
+  nameSel.innerHTML = `<option value="">— choose slot first —</option>`; nameSel.disabled = true;
+  $("linkStudentBtn").disabled = true;
+
+  levelSel.onchange = () => {
+    const lv = levelSel.value;
+    const slots = [...new Set(unclaimed.filter(s => s.level === lv).map(s => s.slot))].sort();
+    slotSel.innerHTML = `<option value="">— choose —</option>` + slots.map(s => `<option>${escapeHtml(s)}</option>`).join("");
+    slotSel.disabled = !lv;
+    nameSel.innerHTML = `<option value="">— choose slot first —</option>`; nameSel.disabled = true;
+    $("linkStudentBtn").disabled = true;
+  };
+  slotSel.onchange = () => {
+    const lv = levelSel.value, sl = slotSel.value;
+    const names = unclaimed.filter(s => s.level === lv && s.slot === sl);
+    nameSel.innerHTML = `<option value="">— choose —</option>` + names.map(s => `<option value="${s.id}">${escapeHtml(s.name)}</option>`).join("");
+    nameSel.disabled = !sl;
+    $("linkStudentBtn").disabled = true;
+  };
+  nameSel.onchange = () => { $("linkStudentBtn").disabled = !nameSel.value; };
+
+  $("linkStudentBtn").onclick = async () => {
+    const id = nameSel.value; if (!id) return;
+    try {
+      await db.collection("students").doc(id).update({
+        uid: currentUser.uid,
+        email: currentUser.email
+      });
+      const doc = await db.collection("students").doc(id).get();
+      myStudent = { id: doc.id, ...doc.data() };
+      hide($("setupView"));
+      showStudentMain();
+    } catch (e) {
+      toast("Could not link: " + (e.message || e));
+    }
+  };
+}
+
+function showStudentMain() {
+  show($("studentView"));
+  $("studentNameTop").textContent = myStudent.name;
+  $("studentClassTop").textContent = `${myStudent.level} · ${myStudent.slot}`;
+  $("balanceNum").textContent = myStudent.marks || 0;
+
+  let currentRewards = [];
+
+  unsubMyStudent = db.collection("students").doc(myStudent.id).onSnapshot(doc => {
+    if (!doc.exists) return;
+    myStudent = { id: doc.id, ...doc.data() };
+    $("balanceNum").textContent = myStudent.marks || 0;
+    renderStudentRewards(currentRewards);
+  });
+
+  unsubRewards = db.collection("rewards").orderBy("marksRequired").onSnapshot(snap => {
+    currentRewards = [];
+    snap.forEach(d => currentRewards.push({ id: d.id, ...d.data() }));
+    renderStudentRewards(currentRewards);
+  });
+
+  // My past claims
+  unsubMyClaims = db.collection("claims").where("uid", "==", currentUser.uid).onSnapshot(snap => {
+    const items = [];
+    snap.forEach(d => items.push({ id: d.id, ...d.data() }));
+    items.sort((a,b) => (b.createdAt?.toMillis?.()||0) - (a.createdAt?.toMillis?.()||0));
+    $("myClaims").querySelector("tbody").innerHTML = items.map(c => `
+      <tr>
+        <td class="small">${fmtTime(c.createdAt)}</td>
+        <td>${escapeHtml(c.rewardName)}</td>
+        <td>${c.marksSpent}</td>
+        <td><span class="chip">${c.status}</span></td>
+      </tr>`).join("") || `<tr><td colspan="4" class="center muted">Nothing yet</td></tr>`;
+  });
+}
+
+function renderStudentRewards(rewards) {
+  const balance = myStudent?.marks || 0;
+  const cards = rewards.filter(r => r.active !== false).map(r => {
+    const affordable = balance >= r.marksRequired && (r.stock == null || r.stock > 0);
+    return `
+      <div class="reward-card">
+        <img src="${r.image}" alt="" />
+        <div class="body">
+          <div class="title">${escapeHtml(r.name)}</div>
+          <div class="muted small">${r.marksRequired} marks${r.stock!=null?` · ${r.stock} left`:""}</div>
+        </div>
+        <div class="foot">
+          ${affordable
+            ? `<button class="btn" data-claim="${r.id}">Claim</button>`
+            : `<span class="muted small">${r.stock===0?"Out of stock":"Need more marks"}</span>`}
+        </div>
+      </div>`;
+  }).join("");
+  $("studentRewards").innerHTML = cards || `<div class="muted">No rewards available yet</div>`;
+
+  $("studentRewards").querySelectorAll("[data-claim]").forEach(btn => {
+    btn.onclick = () => openClaimModal(rewards.find(r => r.id === btn.dataset.claim));
+  });
+}
+
+function openClaimModal(reward) {
+  openModal(`
+    <h3 style="margin-top:0">Claim: ${escapeHtml(reward.name)}</h3>
+    <p class="muted small">Costs ${reward.marksRequired} marks. Your balance: ${myStudent.marks}.</p>
+    <div class="field">
+      <label>Delivery address</label>
+      <textarea id="addrInput" rows="4" placeholder="Full address, postcode, contact number"></textarea>
+    </div>
+    <div class="row" style="justify-content:flex-end">
+      <button class="btn ghost" id="cancelClaim">Cancel</button>
+      <button class="btn" id="confirmClaim">Confirm claim</button>
+    </div>
+  `);
+  $("cancelClaim").onclick = closeModal;
+  $("confirmClaim").onclick = async () => {
+    const address = $("addrInput").value.trim();
+    if (!address) return toast("Address required");
+    $("confirmClaim").disabled = true;
+    try {
+      await db.runTransaction(async (tx) => {
+        const sRef = db.collection("students").doc(myStudent.id);
+        const rRef = db.collection("rewards").doc(reward.id);
+        const [sSnap, rSnap] = await Promise.all([tx.get(sRef), tx.get(rRef)]);
+        if (!sSnap.exists || !rSnap.exists) throw new Error("Missing record");
+        const s = sSnap.data(); const r = rSnap.data();
+        if ((s.marks || 0) < r.marksRequired) throw new Error("Not enough marks");
+        if (r.stock != null && r.stock <= 0) throw new Error("Out of stock");
+        tx.update(sRef, { marks: (s.marks || 0) - r.marksRequired });
+        if (r.stock != null) tx.update(rRef, { stock: r.stock - 1 });
+        const cRef = db.collection("claims").doc();
+        tx.set(cRef, {
+          uid: currentUser.uid,
+          studentId: myStudent.id,
+          studentName: s.name,
+          studentClass: `${s.level} · ${s.slot}`,
+          rewardId: reward.id,
+          rewardName: r.name,
+          marksSpent: r.marksRequired,
+          address,
+          status: "pending",
+          createdAt: firebase.firestore.FieldValue.serverTimestamp()
+        });
+      });
+      closeModal();
+      toast("Claim sent! The teacher will ship your reward.");
+    } catch (e) {
+      $("confirmClaim").disabled = false;
+      toast(e.message || "Could not submit claim");
+    }
+  };
+}
+
+// ---------- Helpers ----------
+function compressImage(file, maxDim, quality) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    const reader = new FileReader();
+    reader.onload = () => { img.src = reader.result; };
+    reader.onerror = reject;
+    img.onload = () => {
+      let { width, height } = img;
+      if (width > maxDim || height > maxDim) {
+        const ratio = Math.min(maxDim / width, maxDim / height);
+        width = Math.round(width * ratio);
+        height = Math.round(height * ratio);
+      }
+      const canvas = document.createElement("canvas");
+      canvas.width = width; canvas.height = height;
+      canvas.getContext("2d").drawImage(img, 0, 0, width, height);
+      resolve(canvas.toDataURL("image/jpeg", quality));
+    };
+    img.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+</script>
+</body>
+</html>
