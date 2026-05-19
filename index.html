@@ -177,6 +177,7 @@
             <div class="muted small grow" id="bulkScopeLabel">Showing all students.</div>
             <div style="width:120px"><input id="bulkPoints" type="number" placeholder="Points" /></div>
             <button class="btn" id="bulkAddBtn">Add points to filtered</button>
+            <button class="btn ghost" id="renameSlotBtn">Rename slot…</button>
           </div>
           <div style="overflow-x:auto">
             <table class="table" id="studentsTable">
@@ -437,6 +438,7 @@ function bootAdmin() {
         <td>${s.uid ? `<span class="chip">${escapeHtml(s.email||"linked")}</span>` : `<span class="muted small">unclaimed</span>`}</td>
         <td style="text-align:right; white-space:nowrap">
           <button class="btn ghost" data-act="save">Save</button>
+          <button class="btn ghost" data-act="edit">Edit</button>
           <button class="btn ghost" data-act="unlink" ${s.uid ? "" : "disabled"}>Unlink</button>
           <button class="btn ghost" data-act="del">Delete</button>
         </td>
@@ -503,6 +505,9 @@ function bootAdmin() {
       const marks = parseInt(tr.querySelector('input[data-field="marks"]').value, 10) || 0;
       await db.collection("students").doc(id).update({ marks });
       toast("Saved");
+    } else if (act === "edit") {
+      const s = allStudents.find(x => x.id === id);
+      if (s) openEditStudentModal(s);
     } else if (act === "del") {
       if (!confirm("Delete this student? This cannot be undone.")) return;
       await db.collection("students").doc(id).delete();
@@ -513,6 +518,84 @@ function bootAdmin() {
       toast("Unlinked");
     }
   });
+
+  function openEditStudentModal(s) {
+    openModal(`
+      <h3 style="margin-top:0">Edit student</h3>
+      <div class="field"><label>Name</label><input id="eName" value="${escapeHtml(s.name||"")}" /></div>
+      <div class="field"><label>Level</label><input id="eLevel" value="${escapeHtml(s.level||"")}" /></div>
+      <div class="field"><label>Time slot</label><input id="eSlot" value="${escapeHtml(s.slot||"")}" /></div>
+      <div class="field"><label>Marks</label><input id="eMarks" type="number" value="${s.marks||0}" /></div>
+      <div class="row" style="justify-content:flex-end">
+        <button class="btn ghost" id="cancelEdit">Cancel</button>
+        <button class="btn" id="saveEdit">Save changes</button>
+      </div>
+    `);
+    $("cancelEdit").onclick = closeModal;
+    $("saveEdit").onclick = async () => {
+      const name = $("eName").value.trim();
+      const level = $("eLevel").value.trim();
+      const slot = $("eSlot").value.trim();
+      const marks = parseInt($("eMarks").value, 10) || 0;
+      if (!name || !level || !slot) return toast("Name, level and slot are required");
+      $("saveEdit").disabled = true;
+      try {
+        await db.collection("students").doc(s.id).update({ name, level, slot, marks });
+        closeModal();
+        toast("Student updated");
+      } catch (e) {
+        $("saveEdit").disabled = false;
+        toast("Update failed: " + (e.message || e));
+      }
+    };
+  }
+
+  $("renameSlotBtn").onclick = () => {
+    const slots = [...new Set(allStudents.map(s => s.slot).filter(Boolean))].sort();
+    if (!slots.length) return toast("No slots to rename");
+    const currentSlot = $("filterSlot").value;
+    openModal(`
+      <h3 style="margin-top:0">Rename slot</h3>
+      <p class="muted small">All students currently in the chosen slot will be moved to the new slot name.</p>
+      <div class="field">
+        <label>Existing slot</label>
+        <select id="oldSlot">
+          ${slots.map(s => `<option ${s===currentSlot?"selected":""}>${escapeHtml(s)}</option>`).join("")}
+        </select>
+      </div>
+      <div class="field"><label>New slot name</label><input id="newSlot" placeholder="e.g. Tue 4-6pm" /></div>
+      <div class="row" style="justify-content:flex-end">
+        <button class="btn ghost" id="cancelRename">Cancel</button>
+        <button class="btn" id="confirmRename">Rename</button>
+      </div>
+    `);
+    $("cancelRename").onclick = closeModal;
+    $("confirmRename").onclick = async () => {
+      const oldSlot = $("oldSlot").value;
+      const newSlot = $("newSlot").value.trim();
+      if (!newSlot) return toast("Enter a new slot name");
+      if (newSlot === oldSlot) return toast("New name matches the existing slot");
+      const targets = allStudents.filter(s => s.slot === oldSlot);
+      if (!targets.length) return toast("No students in that slot");
+      if (!confirm(`Rename slot "${oldSlot}" → "${newSlot}" for ${targets.length} student(s)?`)) return;
+      $("confirmRename").disabled = true;
+      try {
+        const chunkSize = 400;
+        for (let i = 0; i < targets.length; i += chunkSize) {
+          const batch = db.batch();
+          for (const s of targets.slice(i, i + chunkSize)) {
+            batch.update(db.collection("students").doc(s.id), { slot: newSlot });
+          }
+          await batch.commit();
+        }
+        closeModal();
+        toast(`Renamed slot for ${targets.length} student(s)`);
+      } catch (e) {
+        $("confirmRename").disabled = false;
+        toast("Rename failed: " + (e.message || e));
+      }
+    };
+  };
 
   // Rewards: paste image
   const pasteZone = $("pasteZone");
