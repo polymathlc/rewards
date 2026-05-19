@@ -166,6 +166,17 @@
           <h3 style="margin-top:0">All students</h3>
           <div class="row" style="margin-bottom:10px">
             <input id="studentSearch" placeholder="Search by name, level, slot…" class="grow" />
+            <div style="min-width:140px">
+              <select id="filterLevel"><option value="">All levels</option></select>
+            </div>
+            <div style="min-width:160px">
+              <select id="filterSlot"><option value="">All slots</option></select>
+            </div>
+          </div>
+          <div class="row" style="margin-bottom:10px; padding:10px; background:#fafbff; border:1px solid var(--line); border-radius:8px">
+            <div class="muted small grow" id="bulkScopeLabel">Showing all students.</div>
+            <div style="width:120px"><input id="bulkPoints" type="number" placeholder="Points" /></div>
+            <button class="btn" id="bulkAddBtn">Add points to filtered</button>
           </div>
           <div style="overflow-x:auto">
             <table class="table" id="studentsTable">
@@ -382,52 +393,106 @@ function bootAdmin() {
   };
 
   // Live students table
-  unsubStudents = db.collection("students").orderBy("name").onSnapshot(snap => {
-    const rows = []; const q = $("studentSearch").value.toLowerCase();
-    snap.forEach(doc => {
-      const s = { id: doc.id, ...doc.data() };
-      const hay = `${s.name} ${s.level} ${s.slot}`.toLowerCase();
-      if (q && !hay.includes(q)) return;
-      rows.push(`
-        <tr data-id="${s.id}">
-          <td>${escapeHtml(s.name)}</td>
-          <td>${escapeHtml(s.level)}</td>
-          <td>${escapeHtml(s.slot)}</td>
-          <td>
-            <input type="number" value="${s.marks||0}" data-field="marks" style="width:90px"/>
-          </td>
-          <td>${s.uid ? `<span class="chip">${escapeHtml(s.email||"linked")}</span>` : `<span class="muted small">unclaimed</span>`}</td>
-          <td style="text-align:right; white-space:nowrap">
-            <button class="btn ghost" data-act="save">Save</button>
-            <button class="btn ghost" data-act="unlink" ${s.uid ? "" : "disabled"}>Unlink</button>
-            <button class="btn ghost" data-act="del">Delete</button>
-          </td>
-        </tr>`);
-    });
-    $("studentsTable").querySelector("tbody").innerHTML = rows.join("") || `<tr><td colspan="6" class="center muted">No students yet</td></tr>`;
-  });
-  $("studentSearch").oninput = () => {
-    // re-trigger render by calling get once
-    db.collection("students").orderBy("name").get().then(snap => {
-      const rows = []; const q = $("studentSearch").value.toLowerCase();
-      snap.forEach(doc => {
-        const s = { id: doc.id, ...doc.data() };
+  let allStudents = [];
+
+  function filteredStudents() {
+    const q = $("studentSearch").value.toLowerCase().trim();
+    const lv = $("filterLevel").value;
+    const sl = $("filterSlot").value;
+    return allStudents.filter(s => {
+      if (lv && s.level !== lv) return false;
+      if (sl && s.slot !== sl) return false;
+      if (q) {
         const hay = `${s.name} ${s.level} ${s.slot}`.toLowerCase();
-        if (q && !hay.includes(q)) return;
-        rows.push(`
-          <tr data-id="${s.id}">
-            <td>${escapeHtml(s.name)}</td><td>${escapeHtml(s.level)}</td><td>${escapeHtml(s.slot)}</td>
-            <td><input type="number" value="${s.marks||0}" data-field="marks" style="width:90px"/></td>
-            <td>${s.uid ? `<span class="chip">${escapeHtml(s.email||"linked")}</span>` : `<span class="muted small">unclaimed</span>`}</td>
-            <td style="text-align:right; white-space:nowrap">
-              <button class="btn ghost" data-act="save">Save</button>
-              <button class="btn ghost" data-act="unlink" ${s.uid ? "" : "disabled"}>Unlink</button>
-              <button class="btn ghost" data-act="del">Delete</button>
-            </td>
-          </tr>`);
-      });
-      $("studentsTable").querySelector("tbody").innerHTML = rows.join("") || `<tr><td colspan="6" class="center muted">No students</td></tr>`;
+        if (!hay.includes(q)) return false;
+      }
+      return true;
     });
+  }
+
+  function refreshFilterOptions() {
+    const levelSel = $("filterLevel");
+    const slotSel = $("filterSlot");
+    const prevLv = levelSel.value;
+    const prevSl = slotSel.value;
+    const levels = [...new Set(allStudents.map(s => s.level).filter(Boolean))].sort();
+    const slotPool = allStudents.filter(s => !prevLv || s.level === prevLv);
+    const slots = [...new Set(slotPool.map(s => s.slot).filter(Boolean))].sort();
+    levelSel.innerHTML = `<option value="">All levels</option>` +
+      levels.map(l => `<option ${l===prevLv?"selected":""}>${escapeHtml(l)}</option>`).join("");
+    slotSel.innerHTML = `<option value="">All slots</option>` +
+      slots.map(s => `<option ${s===prevSl?"selected":""}>${escapeHtml(s)}</option>`).join("");
+  }
+
+  function renderStudents() {
+    const list = filteredStudents();
+    const rows = list.map(s => `
+      <tr data-id="${s.id}">
+        <td>${escapeHtml(s.name)}</td>
+        <td>${escapeHtml(s.level)}</td>
+        <td>${escapeHtml(s.slot)}</td>
+        <td>
+          <input type="number" value="${s.marks||0}" data-field="marks" style="width:90px"/>
+        </td>
+        <td>${s.uid ? `<span class="chip">${escapeHtml(s.email||"linked")}</span>` : `<span class="muted small">unclaimed</span>`}</td>
+        <td style="text-align:right; white-space:nowrap">
+          <button class="btn ghost" data-act="save">Save</button>
+          <button class="btn ghost" data-act="unlink" ${s.uid ? "" : "disabled"}>Unlink</button>
+          <button class="btn ghost" data-act="del">Delete</button>
+        </td>
+      </tr>`);
+    $("studentsTable").querySelector("tbody").innerHTML =
+      rows.join("") || `<tr><td colspan="6" class="center muted">No students match</td></tr>`;
+
+    const lv = $("filterLevel").value, sl = $("filterSlot").value;
+    const parts = [];
+    if (lv) parts.push(`level ${lv}`);
+    if (sl) parts.push(`slot ${sl}`);
+    const scope = parts.length ? parts.join(", ") : "all students";
+    $("bulkScopeLabel").textContent = `Bulk action targets ${list.length} student${list.length===1?"":"s"} (${scope}).`;
+  }
+
+  unsubStudents = db.collection("students").orderBy("name").onSnapshot(snap => {
+    allStudents = [];
+    snap.forEach(doc => allStudents.push({ id: doc.id, ...doc.data() }));
+    refreshFilterOptions();
+    renderStudents();
+  });
+
+  $("studentSearch").oninput = renderStudents;
+  $("filterLevel").onchange = () => { refreshFilterOptions(); renderStudents(); };
+  $("filterSlot").onchange = renderStudents;
+
+  $("bulkAddBtn").onclick = async () => {
+    const delta = parseInt($("bulkPoints").value, 10);
+    if (!delta) return toast("Enter a non-zero number of points");
+    const targets = filteredStudents();
+    if (!targets.length) return toast("No students in current filter");
+    const lv = $("filterLevel").value, sl = $("filterSlot").value;
+    const scopeBits = [];
+    if (lv) scopeBits.push(`level ${lv}`);
+    if (sl) scopeBits.push(`slot ${sl}`);
+    const scope = scopeBits.length ? scopeBits.join(", ") : "the current filter";
+    if (!confirm(`${delta>0?"Add":"Subtract"} ${Math.abs(delta)} marks ${delta>0?"to":"from"} ${targets.length} student(s) in ${scope}?`)) return;
+    $("bulkAddBtn").disabled = true;
+    try {
+      const chunkSize = 400;
+      for (let i = 0; i < targets.length; i += chunkSize) {
+        const batch = db.batch();
+        for (const s of targets.slice(i, i + chunkSize)) {
+          batch.update(db.collection("students").doc(s.id), {
+            marks: (s.marks || 0) + delta
+          });
+        }
+        await batch.commit();
+      }
+      $("bulkPoints").value = "";
+      toast(`Updated ${targets.length} student(s)`);
+    } catch (e) {
+      toast("Bulk update failed: " + (e.message || e));
+    } finally {
+      $("bulkAddBtn").disabled = false;
+    }
   };
 
   $("studentsTable").addEventListener("click", async (e) => {
