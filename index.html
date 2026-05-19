@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>Rewards</title>
+<title>Polymath Learning Centre Point System</title>
 <style>
   :root {
     --bg: #f6f7fb;
@@ -45,6 +45,16 @@
   }
   .topbar h1 { font-size: 18px; margin: 0; }
   .topbar .spacer { flex: 1; }
+  .topbar .logo { height: 36px; width: auto; max-width: 120px; object-fit: contain; display: none; }
+  .topbar .logo.show { display: block; }
+  .logo-paste {
+    border: 1px dashed var(--line); border-radius: 8px; padding: 6px 10px;
+    font-size: 12px; color: var(--muted); background: #fafbff; cursor: pointer;
+    outline: none; min-width: 140px; text-align: center;
+  }
+  .logo-paste:focus { border-color: var(--brand); background: #fff; }
+  .logo-paste.has { padding: 4px; border-style: solid; }
+  .logo-paste.has img { height: 36px; width: auto; max-width: 140px; display: block; object-fit: contain; }
   .container { max-width: 1080px; margin: 0 auto; padding: 18px; }
   .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 16px; margin-bottom: 16px; }
   .tabs { display: flex; gap: 6px; margin-bottom: 16px; flex-wrap: wrap; }
@@ -122,6 +132,10 @@
               allow create: if request.auth != null && request.resource.data.uid == request.auth.uid;
               allow update, delete: if isAdmin();
             }
+            match /config/{id} {
+              allow read: if request.auth != null;
+              allow write: if isAdmin();
+            }
           }
         }
 
@@ -144,7 +158,8 @@
 
 <div class="login-wrap" id="loginView">
   <div class="login-card">
-    <h1 style="margin:0 0 8px">Rewards</h1>
+    <img id="loginLogo" alt="" style="max-height:60px; max-width:200px; margin:0 auto 12px; display:none;" />
+    <h1 style="margin:0 0 8px">Polymath Learning Centre Point System</h1>
     <p class="muted" style="margin:0 0 18px">Sign in with your Google account to continue.</p>
     <button class="gbtn" id="loginBtn">
       <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" alt="" />
@@ -156,7 +171,9 @@
 
 <div id="app" class="hidden">
   <div class="topbar">
-    <h1>Rewards</h1>
+    <img id="brandLogo" class="logo" alt="" />
+    <div id="logoPaste" class="logo-paste hidden" tabindex="0" title="Click then paste an image (Ctrl/Cmd+V) to set the logo">Click &amp; paste logo</div>
+    <h1>Polymath Learning Centre Point System</h1>
     <span class="chip" id="roleChip"></span>
     <div class="spacer"></div>
     <span class="muted small" id="userEmail"></span>
@@ -410,13 +427,32 @@ $("logoutBtn").addEventListener("click", () => auth.signOut());
 
 let currentUser = null;
 let myStudent = null;            // student doc {id,...} once linked
-let unsubStudents, unsubRewards, unsubClaims, unsubMyClaims, unsubMyStudent, unsubPapers, unsubMyPapers;
+let unsubStudents, unsubRewards, unsubClaims, unsubMyClaims, unsubMyStudent, unsubPapers, unsubMyPapers, unsubBranding;
+
+function applyLogo(dataUrl) {
+  const top = $("brandLogo");
+  const login = $("loginLogo");
+  if (dataUrl) {
+    top.src = dataUrl; top.classList.add("show");
+    login.src = dataUrl; login.style.display = "block";
+  } else {
+    top.removeAttribute("src"); top.classList.remove("show");
+    login.removeAttribute("src"); login.style.display = "none";
+  }
+  const zone = $("logoPaste");
+  if (zone) {
+    if (dataUrl) { zone.classList.add("has"); zone.innerHTML = `<img src="${dataUrl}" alt="logo" />`; }
+    else { zone.classList.remove("has"); zone.textContent = "Click & paste logo"; }
+  }
+}
+
 
 auth.onAuthStateChanged(async (user) => {
   // Tear down any prior listeners
-  [unsubStudents, unsubRewards, unsubClaims, unsubMyClaims, unsubMyStudent, unsubPapers, unsubMyPapers].forEach(fn => { try { fn && fn(); } catch{} });
-  unsubStudents = unsubRewards = unsubClaims = unsubMyClaims = unsubMyStudent = unsubPapers = unsubMyPapers = null;
+  [unsubStudents, unsubRewards, unsubClaims, unsubMyClaims, unsubMyStudent, unsubPapers, unsubMyPapers, unsubBranding].forEach(fn => { try { fn && fn(); } catch{} });
+  unsubStudents = unsubRewards = unsubClaims = unsubMyClaims = unsubMyStudent = unsubPapers = unsubMyPapers = unsubBranding = null;
   myStudent = null;
+  applyLogo(null);
 
   if (!user) {
     currentUser = null;
@@ -430,6 +466,19 @@ auth.onAuthStateChanged(async (user) => {
   const isAdmin = (user.email || "").toLowerCase() === ADMIN_EMAIL.toLowerCase();
   $("roleChip").textContent = isAdmin ? "Admin" : "Student";
 
+  unsubBranding = db.collection("config").doc("branding").onSnapshot(
+    (doc) => applyLogo(doc.exists ? (doc.data().logo || null) : null),
+    () => {}
+  );
+
+  const logoPaste = $("logoPaste");
+  if (isAdmin) {
+    logoPaste.classList.remove("hidden");
+    wireLogoPaste();
+  } else {
+    logoPaste.classList.add("hidden");
+  }
+
   if (isAdmin) {
     show($("adminView")); hide($("setupView")); hide($("studentView"));
     bootAdmin();
@@ -438,6 +487,43 @@ auth.onAuthStateChanged(async (user) => {
     bootStudent();
   }
 });
+
+function wireLogoPaste() {
+  const zone = $("logoPaste");
+  if (zone._wired) return;
+  zone._wired = true;
+  zone.addEventListener("click", () => zone.focus());
+  const handleImage = async (file) => {
+    if (!file || !file.type.startsWith("image/")) return toast("That doesn't look like an image");
+    try {
+      const dataUrl = await compressImage(file, 400, 0.9);
+      if (dataUrl.length > 900_000) return toast("Logo image too large after compression");
+      await db.collection("config").doc("branding").set(
+        { logo: dataUrl, updatedAt: firebase.firestore.FieldValue.serverTimestamp() },
+        { merge: true }
+      );
+      toast("Logo updated");
+    } catch (e) {
+      toast("Could not save logo: " + (e.message || e));
+    }
+  };
+  zone.addEventListener("paste", (e) => {
+    const items = e.clipboardData?.items || [];
+    for (const it of items) {
+      if (it.type && it.type.startsWith("image/")) {
+        handleImage(it.getAsFile());
+        return;
+      }
+    }
+    toast("No image in clipboard");
+  });
+  zone.addEventListener("dragover", (e) => e.preventDefault());
+  zone.addEventListener("drop", (e) => {
+    e.preventDefault();
+    const f = e.dataTransfer?.files?.[0];
+    if (f) handleImage(f);
+  });
+}
 
 // ---------- ADMIN ----------
 document.querySelectorAll(".tab").forEach(tab => {
