@@ -116,6 +116,28 @@
               allow create: if request.auth != null && request.resource.data.uid == request.auth.uid;
               allow update, delete: if isAdmin();
             }
+            match /testPapers/{id} {
+              allow read: if isAdmin() ||
+                (request.auth != null && resource.data.uid == request.auth.uid);
+              allow create: if request.auth != null && request.resource.data.uid == request.auth.uid;
+              allow update, delete: if isAdmin();
+            }
+          }
+        }
+
+     Also enable Firebase Storage and use rules similar to:
+        rules_version = '2';
+        service firebase.storage {
+          match /b/{bucket}/o {
+            function isAdmin() {
+              return request.auth != null && request.auth.token.email == 'chungzhikai@gmail.com';
+            }
+            match /testPapers/{studentId}/{file=**} {
+              allow read: if isAdmin() || request.auth != null;
+              allow write: if request.auth != null
+                && request.resource.size < 10 * 1024 * 1024
+                && request.resource.contentType == 'application/pdf';
+            }
           }
         }
      ============================================================ -->
@@ -148,6 +170,7 @@
         <button class="tab active" data-tab="adm-students">Students</button>
         <button class="tab" data-tab="adm-rewards">Rewards</button>
         <button class="tab" data-tab="adm-claims">Pending shipments <span class="pill" id="pendingPill" style="margin-left:6px; display:none;">0</span></button>
+        <button class="tab" data-tab="adm-papers">Test papers <span class="pill" id="papersPill" style="margin-left:6px; display:none;">0</span></button>
       </div>
 
       <!-- Students tab -->
@@ -207,6 +230,20 @@
         </div>
       </div>
 
+      <!-- Test papers tab -->
+      <div id="adm-papers" class="tab-pane hidden">
+        <div class="card">
+          <h3 style="margin-top:0">Uploaded test papers</h3>
+          <p class="muted small" style="margin-top:-6px">Students earn +10 marks each time they upload a test paper PDF.</p>
+          <div style="overflow-x:auto">
+            <table class="table" id="papersTable">
+              <thead><tr><th>When</th><th>Student</th><th>File</th><th>Size</th><th></th></tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
       <!-- Claims tab -->
       <div id="adm-claims" class="tab-pane hidden">
         <div class="card">
@@ -250,6 +287,30 @@
         </div>
       </div>
       <div class="card">
+        <h3 style="margin-top:0">Upload a test paper for +10 marks</h3>
+        <p class="muted small" style="margin-top:-6px">Upload your completed test paper as a PDF. You'll be awarded <strong>+10 marks</strong> as soon as it's uploaded. The teacher will be able to view it.</p>
+        <div class="field">
+          <label>Choose PDF (max 10 MB)</label>
+          <input id="testPaperFile" type="file" accept="application/pdf" />
+        </div>
+        <button class="btn" id="uploadPaperBtn">Upload test paper</button>
+        <div class="muted small" id="uploadStatus" style="margin-top:8px"></div>
+      </div>
+      <div class="card">
+        <h3 style="margin-top:0">More ways to earn extra marks</h3>
+        <p class="muted small" style="margin-top:-6px">Tell the teacher when any of these happen — they'll add the marks to your account.</p>
+        <ul id="bonusBehaviours" style="margin:0; padding-left:18px; line-height:1.8"></ul>
+      </div>
+      <div class="card">
+        <h3 style="margin-top:0">My uploaded test papers</h3>
+        <div style="overflow-x:auto">
+          <table class="table" id="myPapers">
+            <thead><tr><th>When</th><th>File</th><th>Marks awarded</th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+      <div class="card">
         <h3 style="margin-top:0">Choose your reward</h3>
         <div class="grid" id="studentRewards"></div>
       </div>
@@ -277,6 +338,7 @@
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-storage-compat.js"></script>
 <script>
 // ============================================================
 // PASTE YOUR FIREBASE CONFIG HERE
@@ -296,6 +358,16 @@ const ADMIN_EMAIL = "chungzhikai@gmail.com";
 firebase.initializeApp(firebaseConfig);
 const auth = firebase.auth();
 const db = firebase.firestore();
+const storage = firebase.storage();
+
+const BONUS_BEHAVIOURS = [
+  { label: "Signed up for Holiday Program", marks: 50 },
+  { label: "Obtained AL 1", marks: 20 },
+  { label: "Obtained AL 2", marks: 10 },
+  { label: "Improvement of 1 AL", marks: 10 },
+];
+const TEST_PAPER_AWARD = 10;
+const MAX_PDF_BYTES = 10 * 1024 * 1024; // 10 MB
 
 const $ = (id) => document.getElementById(id);
 const show = (el) => el.classList.remove("hidden");
@@ -338,12 +410,12 @@ $("logoutBtn").addEventListener("click", () => auth.signOut());
 
 let currentUser = null;
 let myStudent = null;            // student doc {id,...} once linked
-let unsubStudents, unsubRewards, unsubClaims, unsubMyClaims, unsubMyStudent;
+let unsubStudents, unsubRewards, unsubClaims, unsubMyClaims, unsubMyStudent, unsubPapers, unsubMyPapers;
 
 auth.onAuthStateChanged(async (user) => {
   // Tear down any prior listeners
-  [unsubStudents, unsubRewards, unsubClaims, unsubMyClaims, unsubMyStudent].forEach(fn => { try { fn && fn(); } catch{} });
-  unsubStudents = unsubRewards = unsubClaims = unsubMyClaims = unsubMyStudent = null;
+  [unsubStudents, unsubRewards, unsubClaims, unsubMyClaims, unsubMyStudent, unsubPapers, unsubMyPapers].forEach(fn => { try { fn && fn(); } catch{} });
+  unsubStudents = unsubRewards = unsubClaims = unsubMyClaims = unsubMyStudent = unsubPapers = unsubMyPapers = null;
   myStudent = null;
 
   if (!user) {
@@ -707,6 +779,46 @@ function bootAdmin() {
     if (pending > 0) { pill.style.display = "inline-block"; pill.textContent = pending; }
     else pill.style.display = "none";
   });
+  // Test papers
+  unsubPapers = db.collection("testPapers").orderBy("createdAt", "desc").onSnapshot(snap => {
+    const rows = [];
+    snap.forEach(doc => {
+      const p = { id: doc.id, ...doc.data() };
+      rows.push(`
+        <tr data-id="${p.id}" data-path="${escapeHtml(p.storagePath||"")}">
+          <td class="small">${fmtTime(p.createdAt)}</td>
+          <td>${escapeHtml(p.studentName||"")}<div class="muted small">${escapeHtml(p.studentClass||"")}</div></td>
+          <td><a href="${escapeHtml(p.downloadURL||"#")}" target="_blank" rel="noopener">${escapeHtml(p.fileName||"paper.pdf")}</a></td>
+          <td class="small">${formatBytes(p.size||0)}</td>
+          <td style="text-align:right; white-space:nowrap">
+            <a class="btn ghost" href="${escapeHtml(p.downloadURL||"#")}" target="_blank" rel="noopener">View</a>
+            <button class="btn ghost" data-act="delPaper">Delete</button>
+          </td>
+        </tr>`);
+    });
+    $("papersTable").querySelector("tbody").innerHTML = rows.join("") || `<tr><td colspan="5" class="center muted">No test papers uploaded yet</td></tr>`;
+    const pill = $("papersPill");
+    if (rows.length > 0) { pill.style.display = "inline-block"; pill.textContent = rows.length; }
+    else pill.style.display = "none";
+  });
+  $("papersTable").addEventListener("click", async (e) => {
+    const btn = e.target.closest("button"); if (!btn) return;
+    const tr = e.target.closest("tr"); const id = tr?.dataset.id; if (!id) return;
+    if (btn.dataset.act === "delPaper") {
+      if (!confirm("Delete this uploaded test paper? The PDF file will also be removed. Marks already awarded will NOT be reversed.")) return;
+      try {
+        const path = tr.dataset.path;
+        if (path) {
+          try { await storage.ref(path).delete(); } catch (err) { /* file may already be gone */ }
+        }
+        await db.collection("testPapers").doc(id).delete();
+        toast("Deleted");
+      } catch (err) {
+        toast("Delete failed: " + (err.message || err));
+      }
+    }
+  });
+
   $("claimsTable").addEventListener("click", async (e) => {
     const btn = e.target.closest("button"); if (!btn) return;
     const id = e.target.closest("tr")?.dataset.id; if (!id) return;
@@ -784,6 +896,24 @@ function showStudentMain() {
   $("studentNameTop").textContent = myStudent.name;
   $("studentClassTop").textContent = `${myStudent.level} · ${myStudent.slot}`;
   $("balanceNum").textContent = myStudent.marks || 0;
+
+  $("bonusBehaviours").innerHTML = BONUS_BEHAVIOURS.map(b =>
+    `<li>${escapeHtml(b.label)} <span class="pill" style="margin-left:6px">+${b.marks}</span></li>`
+  ).join("");
+
+  wireTestPaperUpload();
+
+  unsubMyPapers = db.collection("testPapers").where("uid", "==", currentUser.uid).onSnapshot(snap => {
+    const items = [];
+    snap.forEach(d => items.push({ id: d.id, ...d.data() }));
+    items.sort((a,b) => (b.createdAt?.toMillis?.()||0) - (a.createdAt?.toMillis?.()||0));
+    $("myPapers").querySelector("tbody").innerHTML = items.map(p => `
+      <tr>
+        <td class="small">${fmtTime(p.createdAt)}</td>
+        <td><a href="${escapeHtml(p.downloadURL||"#")}" target="_blank" rel="noopener">${escapeHtml(p.fileName||"paper.pdf")}</a></td>
+        <td>+${p.marksAwarded || 0}</td>
+      </tr>`).join("") || `<tr><td colspan="3" class="center muted">No uploads yet</td></tr>`;
+  });
 
   let currentRewards = [];
 
@@ -890,6 +1020,73 @@ function openClaimModal(reward) {
       toast(e.message || "Could not submit claim");
     }
   };
+}
+
+function wireTestPaperUpload() {
+  const fileInput = $("testPaperFile");
+  const btn = $("uploadPaperBtn");
+  const statusEl = $("uploadStatus");
+  btn.onclick = async () => {
+    const file = fileInput.files?.[0];
+    if (!file) return toast("Choose a PDF file first");
+    const isPdf = file.type === "application/pdf" || /\.pdf$/i.test(file.name);
+    if (!isPdf) return toast("Only PDF files are accepted");
+    if (file.size > MAX_PDF_BYTES) return toast("File too large (max 10 MB)");
+    btn.disabled = true;
+    statusEl.textContent = "Uploading…";
+    try {
+      const safeName = file.name.replace(/[^\w.\- ]+/g, "_").slice(0, 80) || "paper.pdf";
+      const path = `testPapers/${myStudent.id}/${Date.now()}_${safeName}`;
+      const ref = storage.ref(path);
+      const task = ref.put(file, { contentType: "application/pdf" });
+      await new Promise((resolve, reject) => {
+        task.on("state_changed",
+          (s) => {
+            const pct = s.totalBytes ? Math.round((s.bytesTransferred / s.totalBytes) * 100) : 0;
+            statusEl.textContent = `Uploading… ${pct}%`;
+          },
+          reject,
+          resolve
+        );
+      });
+      const downloadURL = await ref.getDownloadURL();
+      await db.runTransaction(async (tx) => {
+        const sRef = db.collection("students").doc(myStudent.id);
+        const sSnap = await tx.get(sRef);
+        if (!sSnap.exists) throw new Error("Student record missing");
+        const s = sSnap.data();
+        tx.update(sRef, { marks: (s.marks || 0) + TEST_PAPER_AWARD });
+        const pRef = db.collection("testPapers").doc();
+        tx.set(pRef, {
+          uid: currentUser.uid,
+          studentId: myStudent.id,
+          studentName: s.name,
+          studentClass: `${s.level} · ${s.slot}`,
+          fileName: file.name,
+          size: file.size,
+          storagePath: path,
+          downloadURL,
+          marksAwarded: TEST_PAPER_AWARD,
+          createdAt: firebase.firestore.FieldValue.serverTimestamp()
+        });
+      });
+      statusEl.textContent = "";
+      fileInput.value = "";
+      toast(`Uploaded — +${TEST_PAPER_AWARD} marks awarded!`);
+    } catch (e) {
+      statusEl.textContent = "";
+      toast("Upload failed: " + (e.message || e));
+    } finally {
+      btn.disabled = false;
+    }
+  };
+}
+
+function formatBytes(n) {
+  if (!n) return "—";
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+  return `${(n / (1024 * 1024)).toFixed(2)} MB`;
 }
 
 // ---------- Helpers ----------
