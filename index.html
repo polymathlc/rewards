@@ -88,9 +88,23 @@
   .hidden { display: none !important; }
   .balance-big { font-size: 38px; font-weight: 700; }
   .small { font-size: 13px; }
+  .podium { display: grid; gap: 12px; grid-template-columns: repeat(3, 1fr); }
+  .prize-slot {
+    border: 1px solid var(--line); border-radius: 12px; padding: 16px 14px;
+    text-align: center; background: #fafbff; display: flex; flex-direction: column; gap: 4px;
+  }
+  .prize-slot.gold   { background: linear-gradient(180deg,#fff9e6,#fff); border-color: #f1d27a; }
+  .prize-slot.silver { background: linear-gradient(180deg,#f2f4f7,#fff); border-color: #ccd2dc; }
+  .prize-slot.bronze { background: linear-gradient(180deg,#fbeede,#fff); border-color: #e0b98f; }
+  .prize-slot.me { box-shadow: 0 0 0 2px var(--brand) inset; }
+  .prize-slot .medal { font-size: 36px; line-height: 1; }
+  .prize-slot .tier { font-weight: 700; }
+  .prize-slot .voucher { font-size: 20px; font-weight: 700; color: var(--good); }
+  .prize-slot .pname { font-weight: 600; margin-top: 4px; }
   @media (max-width: 600px) {
     .container { padding: 12px; }
     .card { padding: 12px; }
+    .podium { grid-template-columns: 1fr; }
   }
 </style>
 </head>
@@ -180,6 +194,13 @@
     <button class="btn ghost" id="logoutBtn">Sign out</button>
   </div>
   <div class="container">
+
+    <!-- PRIZE LEADERBOARD -->
+    <div id="prizePodium" class="card hidden">
+      <h3 style="margin-top:0">🏆 Prize Leaderboard</h3>
+      <p class="muted small" style="margin-top:-6px">The top three students each win a voucher of their choice — keep earning marks to climb the podium!</p>
+      <div class="podium" id="podiumSlots"></div>
+    </div>
 
     <!-- ADMIN -->
     <div id="adminView" class="hidden">
@@ -386,6 +407,12 @@ const BONUS_BEHAVIOURS = [
 const TEST_PAPER_AWARD = 10;
 const MAX_PDF_BYTES = 10 * 1024 * 1024; // 10 MB
 
+const PRIZE_TIERS = [
+  { tier: "Gold",   medal: "🥇", amount: 300, cls: "gold" },
+  { tier: "Silver", medal: "🥈", amount: 200, cls: "silver" },
+  { tier: "Bronze", medal: "🥉", amount: 100, cls: "bronze" },
+];
+
 const $ = (id) => document.getElementById(id);
 const show = (el) => el.classList.remove("hidden");
 const hide = (el) => el.classList.add("hidden");
@@ -427,7 +454,8 @@ $("logoutBtn").addEventListener("click", () => auth.signOut());
 
 let currentUser = null;
 let myStudent = null;            // student doc {id,...} once linked
-let unsubStudents, unsubRewards, unsubClaims, unsubMyClaims, unsubMyStudent, unsubPapers, unsubMyPapers, unsubBranding;
+let unsubStudents, unsubRewards, unsubClaims, unsubMyClaims, unsubMyStudent, unsubPapers, unsubMyPapers, unsubBranding, unsubPodium;
+let podiumTop = [];
 
 function applyLogo(dataUrl) {
   const top = $("brandLogo");
@@ -449,9 +477,11 @@ function applyLogo(dataUrl) {
 
 auth.onAuthStateChanged(async (user) => {
   // Tear down any prior listeners
-  [unsubStudents, unsubRewards, unsubClaims, unsubMyClaims, unsubMyStudent, unsubPapers, unsubMyPapers, unsubBranding].forEach(fn => { try { fn && fn(); } catch{} });
-  unsubStudents = unsubRewards = unsubClaims = unsubMyClaims = unsubMyStudent = unsubPapers = unsubMyPapers = unsubBranding = null;
+  [unsubStudents, unsubRewards, unsubClaims, unsubMyClaims, unsubMyStudent, unsubPapers, unsubMyPapers, unsubBranding, unsubPodium].forEach(fn => { try { fn && fn(); } catch{} });
+  unsubStudents = unsubRewards = unsubClaims = unsubMyClaims = unsubMyStudent = unsubPapers = unsubMyPapers = unsubBranding = unsubPodium = null;
   myStudent = null;
+  podiumTop = [];
+  hide($("prizePodium"));
   applyLogo(null);
 
   if (!user) {
@@ -468,6 +498,16 @@ auth.onAuthStateChanged(async (user) => {
 
   unsubBranding = db.collection("config").doc("branding").onSnapshot(
     (doc) => applyLogo(doc.exists ? (doc.data().logo || null) : null),
+    () => {}
+  );
+
+  show($("prizePodium"));
+  unsubPodium = db.collection("students").orderBy("marks", "desc").limit(3).onSnapshot(
+    (snap) => {
+      podiumTop = [];
+      snap.forEach(d => podiumTop.push({ id: d.id, ...d.data() }));
+      renderPodium();
+    },
     () => {}
   );
 
@@ -979,6 +1019,7 @@ async function bootStudent() {
 
 function showStudentMain() {
   show($("studentView"));
+  renderPodium();
   $("studentNameTop").textContent = myStudent.name;
   $("studentClassTop").textContent = `${myStudent.level} · ${myStudent.slot}`;
   $("balanceNum").textContent = myStudent.marks || 0;
@@ -1166,6 +1207,24 @@ function wireTestPaperUpload() {
       btn.disabled = false;
     }
   };
+}
+
+function renderPodium() {
+  const slots = $("podiumSlots");
+  if (!slots) return;
+  slots.innerHTML = PRIZE_TIERS.map((t, i) => {
+    const s = podiumTop[i];
+    const isMe = s && myStudent && s.id === myStudent.id;
+    return `
+      <div class="prize-slot ${t.cls}${isMe ? " me" : ""}">
+        <div class="medal">${t.medal}</div>
+        <div class="tier">${t.tier}</div>
+        <div class="voucher">$${t.amount} voucher</div>
+        <div class="muted small">of your choice</div>
+        <div class="pname">${s ? escapeHtml(s.name) + (isMe ? " (You)" : "") : "—"}</div>
+        <div class="muted small">${s ? `${s.marks || 0} marks` : "Slot open"}</div>
+      </div>`;
+  }).join("");
 }
 
 function formatBytes(n) {
