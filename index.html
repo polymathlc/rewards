@@ -116,6 +116,16 @@
     padding: 4px 14px; letter-spacing: .1em; background: rgba(255,255,255,.78);
     text-transform: uppercase;
   }
+  .cropper {
+    position: relative; width: 100%; aspect-ratio: 4/3; overflow: hidden;
+    background: #1c1712; border: 2px solid #7a5a2e; border-radius: 8px;
+    cursor: grab; touch-action: none; user-select: none;
+  }
+  .cropper.dragging { cursor: grabbing; }
+  .cropper img {
+    position: absolute; top: 0; left: 0; transform-origin: 0 0;
+    will-change: transform; pointer-events: none; -webkit-user-drag: none;
+  }
   .table { width: 100%; border-collapse: collapse; }
   .table th, .table td { padding: 9px 10px; border-bottom: 1px solid var(--line); text-align: left; font-size: 14px; vertical-align: middle; }
   .table th { font-weight: 600; color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .04em; }
@@ -1108,25 +1118,124 @@ function bootAdmin() {
   // Bosses: paste image
   const bossPasteZone = $("bossPasteZone");
   let bossPastedDataUrl = null;
-  const setBossImage = async (file) => {
-    if (!file || !file.type.startsWith("image/")) return toast("That doesn't look like an image");
-    bossPastedDataUrl = await compressImage(file, 900, 0.82);
+
+  function setBossPreview(dataUrl) {
+    bossPastedDataUrl = dataUrl;
     bossPasteZone.classList.add("has");
-    bossPasteZone.innerHTML = `<img src="${bossPastedDataUrl}" alt="boss preview" />`;
-  };
+    bossPasteZone.innerHTML = `<img src="${dataUrl}" alt="boss preview" />`;
+  }
+
+  function openBossCropper(file) {
+    if (!file || !file.type.startsWith("image/")) return toast("That doesn't look like an image");
+    const reader = new FileReader();
+    reader.onload = () => {
+      const img = new Image();
+      img.onload = () => showBossCropModal(img);
+      img.onerror = () => toast("Could not load that image");
+      img.src = reader.result;
+    };
+    reader.onerror = () => toast("Could not read that file");
+    reader.readAsDataURL(file);
+  }
+
+  function showBossCropModal(img) {
+    openModal(`
+      <h3 style="margin-top:0">Position the boss image</h3>
+      <p class="muted small" style="margin-top:-4px">Drag the image to reposition it, and use the slider to zoom. Only what's inside the frame is saved.</p>
+      <div class="cropper" id="cropViewport"><img id="cropImg" alt="" /></div>
+      <div class="field" style="margin-top:12px">
+        <label>Zoom</label>
+        <input type="range" id="cropZoom" min="1" max="4" step="0.01" value="1" />
+      </div>
+      <div class="row" style="justify-content:flex-end">
+        <button class="btn ghost" id="cropCancel">Cancel</button>
+        <button class="btn" id="cropApply">Use this image</button>
+      </div>
+    `);
+    const viewport = $("cropViewport");
+    const cropImg = $("cropImg");
+    const zoom = $("cropZoom");
+    cropImg.src = img.src;
+
+    const nw = img.naturalWidth, nh = img.naturalHeight;
+    let vw = 0, vh = 0, baseScale = 1, scale = 1, ox = 0, oy = 0;
+
+    function clamp() {
+      const dw = nw * scale, dh = nh * scale;
+      ox = Math.min(0, Math.max(vw - dw, ox));
+      oy = Math.min(0, Math.max(vh - dh, oy));
+    }
+    function paint() {
+      cropImg.style.transform = `translate(${ox}px, ${oy}px) scale(${scale})`;
+    }
+    function init() {
+      const r = viewport.getBoundingClientRect();
+      vw = r.width; vh = r.height;
+      if (!vw || !vh) { requestAnimationFrame(init); return; }
+      baseScale = Math.max(vw / nw, vh / nh);
+      scale = baseScale * parseFloat(zoom.value);
+      ox = (vw - nw * scale) / 2;
+      oy = (vh - nh * scale) / 2;
+      clamp(); paint();
+    }
+    requestAnimationFrame(init);
+
+    zoom.oninput = () => {
+      const prev = scale;
+      scale = baseScale * parseFloat(zoom.value);
+      const cx = vw / 2, cy = vh / 2;
+      ox = cx - (cx - ox) * (scale / prev);
+      oy = cy - (cy - oy) * (scale / prev);
+      clamp(); paint();
+    };
+
+    let dragging = false, lastX = 0, lastY = 0;
+    viewport.addEventListener("pointerdown", (e) => {
+      dragging = true; lastX = e.clientX; lastY = e.clientY;
+      viewport.classList.add("dragging");
+      viewport.setPointerCapture(e.pointerId);
+    });
+    viewport.addEventListener("pointermove", (e) => {
+      if (!dragging) return;
+      ox += e.clientX - lastX; oy += e.clientY - lastY;
+      lastX = e.clientX; lastY = e.clientY;
+      clamp(); paint();
+    });
+    const endDrag = () => { dragging = false; viewport.classList.remove("dragging"); };
+    viewport.addEventListener("pointerup", endDrag);
+    viewport.addEventListener("pointercancel", endDrag);
+
+    $("cropCancel").onclick = closeModal;
+    $("cropApply").onclick = () => {
+      if (!vw || !vh) return;
+      const outW = 900, outH = Math.round(outW * vh / vw);
+      const canvas = document.createElement("canvas");
+      canvas.width = outW; canvas.height = outH;
+      const ctx = canvas.getContext("2d");
+      ctx.drawImage(img, -ox / scale, -oy / scale, vw / scale, vh / scale, 0, 0, outW, outH);
+      let q = 0.85, dataUrl = canvas.toDataURL("image/jpeg", q);
+      while (dataUrl.length > 900_000 && q > 0.4) {
+        q -= 0.1; dataUrl = canvas.toDataURL("image/jpeg", q);
+      }
+      if (dataUrl.length > 900_000) return toast("Image too large, try a smaller one");
+      setBossPreview(dataUrl);
+      closeModal();
+    };
+  }
+
   bossPasteZone.addEventListener("click", () => bossPasteZone.focus());
-  bossPasteZone.addEventListener("paste", async (e) => {
+  bossPasteZone.addEventListener("paste", (e) => {
     const items = e.clipboardData?.items || [];
     for (const it of items) {
-      if (it.type && it.type.startsWith("image/")) { await setBossImage(it.getAsFile()); return; }
+      if (it.type && it.type.startsWith("image/")) { openBossCropper(it.getAsFile()); return; }
     }
     toast("No image in clipboard");
   });
   bossPasteZone.addEventListener("dragover", e => e.preventDefault());
-  bossPasteZone.addEventListener("drop", async (e) => {
+  bossPasteZone.addEventListener("drop", (e) => {
     e.preventDefault();
     const f = e.dataTransfer?.files?.[0];
-    if (f) await setBossImage(f);
+    if (f) openBossCropper(f);
   });
 
   $("addBossBtn").onclick = async () => {
