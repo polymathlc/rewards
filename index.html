@@ -199,7 +199,10 @@
             }
             match /bosses/{id} {
               allow read: if request.auth != null;
-              allow write: if isAdmin();
+              allow create, delete: if isAdmin();
+              // Any signed-in user may update a boss so earning points can
+              // automatically damage it (e.g. a student uploading a test paper).
+              allow update: if request.auth != null;
             }
             match /claims/{id} {
               allow read: if isAdmin() ||
@@ -353,7 +356,7 @@
         </div>
         <div class="card">
           <h3 style="margin-top:0">All bosses</h3>
-          <p class="muted small" style="margin-top:-6px">Enter the points to give the boss — it loses that much health. When HP hits 0 every student is rewarded.</p>
+          <p class="muted small" style="margin-top:-6px">The boss loses health automatically — every point a student earns deals that much damage. When its HP hits 0, every student is rewarded.</p>
           <div class="grid" id="adminBosses"></div>
         </div>
       </div>
@@ -546,6 +549,36 @@ function slotsText(s) {
   return arr.length ? arr.join(", ") : "—";
 }
 
+// Whenever students earn points, the boss takes that much damage automatically.
+// Reward payout on defeat is handled by the admin session's boss listener.
+async function damageBosses(points) {
+  points = Math.floor(Number(points) || 0);
+  if (points <= 0) return;
+  let snap;
+  try {
+    snap = await db.collection("bosses").where("active", "==", true).get();
+  } catch { return; }
+  for (const doc of snap.docs) {
+    const b = doc.data();
+    if (b.defeated || (b.hp || 0) <= 0) continue;
+    try {
+      await db.runTransaction(async (tx) => {
+        const s = await tx.get(doc.ref);
+        if (!s.exists) return;
+        const cur = s.data();
+        if (cur.defeated || (cur.hp || 0) <= 0) return;
+        const newHp = Math.max(0, (cur.hp || 0) - points);
+        const upd = { hp: newHp };
+        if (newHp === 0) {
+          upd.defeated = true;
+          upd.defeatedAt = firebase.firestore.FieldValue.serverTimestamp();
+        }
+        tx.update(doc.ref, upd);
+      });
+    } catch { /* ignore — best effort */ }
+  }
+}
+
 // ---------- AUTH ----------
 $("loginBtn").addEventListener("click", async () => {
   try {
@@ -736,7 +769,11 @@ function bootAdmin() {
         <td>${escapeHtml(s.level)}</td>
         <td>${escapeHtml(slotsText(s))}</td>
         <td>
-          <input type="number" value="${s.marks||0}" data-field="marks" style="width:90px"/>
+          <div style="display:flex; gap:6px; align-items:center">
+            <input type="number" value="${s.marks||0}" data-field="marks" style="width:72px"/>
+            <input type="number" data-award placeholder="+pts" style="width:64px"/>
+            <button class="btn" data-act="plus" title="Award points now (boss takes damage)" style="padding:8px 11px">+</button>
+          </div>
         </td>
         <td>${s.uid ? `<span class="chip">${escapeHtml(s.email||"linked")}</span>` : `<span class="muted small">unclaimed</span>`}</td>
         <td style="text-align:right; white-space:nowrap">
@@ -793,6 +830,7 @@ function bootAdmin() {
         await batch.commit();
       }
       $("bulkPoints").value = "";
+      if (delta > 0) await damageBosses(delta * targets.length);
       toast(`Updated ${targets.length} student(s)`);
     } catch (e) {
       toast("Bulk update failed: " + (e.message || e));
@@ -805,7 +843,23 @@ function bootAdmin() {
     const btn = e.target.closest("button"); if (!btn) return;
     const tr = e.target.closest("tr"); const id = tr?.dataset.id; if (!id) return;
     const act = btn.dataset.act;
-    if (act === "save") {
+    if (act === "plus") {
+      const amtEl = tr.querySelector('input[data-award]');
+      const amt = parseInt(amtEl.value, 10);
+      if (!amt) return toast("Enter points to award");
+      const s = allStudents.find(x => x.id === id);
+      btn.disabled = true;
+      try {
+        await db.collection("students").doc(id).update({ marks: (s?.marks || 0) + amt });
+        amtEl.value = "";
+        if (amt > 0) await damageBosses(amt);
+        toast(`${amt > 0 ? "+" : ""}${amt} marks → ${s?.name || "student"}`);
+      } catch (err) {
+        toast("Could not award points: " + (err.message || err));
+      } finally {
+        btn.disabled = false;
+      }
+    } else if (act === "save") {
       const marks = parseInt(tr.querySelector('input[data-field="marks"]').value, 10) || 0;
       await db.collection("students").doc(id).update({ marks });
       toast("Saved");
@@ -1276,11 +1330,9 @@ function bootAdmin() {
             <div class="hpbar"><div style="width:${pct}%"></div></div>
             <div class="muted small">${hp} / ${max} HP</div>
             <div class="small">Reward: <strong>+${b.reward || 0} marks</strong> to every student when defeated</div>
-            ${defeated ? "" : `
-              <div class="row" style="margin-top:4px">
-                <div style="width:110px"><input type="number" data-dmg placeholder="Points" min="1" /></div>
-                <button class="btn" data-act="damage">Deal damage</button>
-              </div>`}
+            <div class="muted small">${defeated
+              ? "Defeated — reward paid to all students."
+              : "Loses health automatically as students earn points."}</div>
           </div>
           <div class="foot">
             <span class="chip">${b.active === false ? "Hidden" : "Active"}</span>
@@ -1293,30 +1345,24 @@ function bootAdmin() {
     }).join("") || `<div class="muted">No bosses yet</div>`;
   }
 
-  unsubBosses = db.collection("bosses").orderBy("createdAt", "desc").onSnapshot(snap => {
-    const bosses = [];
-    snap.forEach(doc => bosses.push({ id: doc.id, ...doc.data() }));
-    renderAdminBosses(bosses);
-  });
-
-  async function dealBossDamage(bossId, dmg) {
-    let defeatedNow = false, boss = null;
-    await db.runTransaction(async (tx) => {
-      const ref = db.collection("bosses").doc(bossId);
-      const snap = await tx.get(ref);
-      if (!snap.exists) throw new Error("Boss not found");
-      boss = snap.data();
-      if (boss.defeated || (boss.hp || 0) <= 0) throw new Error("Boss already defeated");
-      const newHp = Math.max(0, (boss.hp || 0) - dmg);
-      const upd = { hp: newHp };
-      if (newHp === 0) {
-        upd.defeated = true;
-        upd.defeatedAt = firebase.firestore.FieldValue.serverTimestamp();
-        defeatedNow = true;
-      }
-      tx.update(ref, upd);
-    });
-    if (defeatedNow) {
+  // When a boss is defeated, the admin session pays out the reward to every
+  // student exactly once (rewardPaid flag is claimed in a transaction first).
+  const bossPayoutInProgress = new Set();
+  async function payBossReward(boss) {
+    if (boss.rewardPaid || bossPayoutInProgress.has(boss.id)) return;
+    bossPayoutInProgress.add(boss.id);
+    try {
+      const claimed = await db.runTransaction(async (tx) => {
+        const ref = db.collection("bosses").doc(boss.id);
+        const s = await tx.get(ref);
+        if (!s.exists || s.data().rewardPaid) return false;
+        tx.update(ref, {
+          rewardPaid: true,
+          rewardPaidAt: firebase.firestore.FieldValue.serverTimestamp()
+        });
+        return true;
+      });
+      if (!claimed) return;
       const reward = boss.reward || 0;
       const targets = allStudents.slice();
       if (reward > 0 && targets.length) {
@@ -1329,11 +1375,22 @@ function bootAdmin() {
           await batch.commit();
         }
       }
-      toast(`Boss defeated! +${reward} marks to all ${targets.length} student(s)`);
-    } else {
-      toast(`Dealt ${dmg} damage`);
+      toast(`Boss "${boss.name}" defeated! +${reward} marks to all ${targets.length} student(s)`);
+    } catch (e) {
+      toast("Boss reward payout failed: " + (e.message || e));
+    } finally {
+      bossPayoutInProgress.delete(boss.id);
     }
   }
+
+  unsubBosses = db.collection("bosses").orderBy("createdAt", "desc").onSnapshot(snap => {
+    const bosses = [];
+    snap.forEach(doc => bosses.push({ id: doc.id, ...doc.data() }));
+    renderAdminBosses(bosses);
+    bosses.forEach(b => {
+      if ((b.defeated || (b.hp || 0) <= 0) && !b.rewardPaid) payBossReward(b);
+    });
+  });
 
   $("adminBosses").addEventListener("click", async (e) => {
     const btn = e.target.closest("button"); if (!btn) return;
@@ -1346,17 +1403,6 @@ function bootAdmin() {
     } else if (act === "toggle") {
       const doc = await db.collection("bosses").doc(id).get();
       await db.collection("bosses").doc(id).update({ active: doc.data().active === false });
-    } else if (act === "damage") {
-      const dmg = parseInt(card.querySelector("input[data-dmg]").value, 10);
-      if (!dmg || dmg <= 0) return toast("Enter the points to give the boss");
-      btn.disabled = true;
-      try {
-        await dealBossDamage(id, dmg);
-      } catch (err) {
-        toast(err.message || "Could not deal damage");
-      } finally {
-        btn.disabled = false;
-      }
     }
   });
 }
@@ -1639,6 +1685,7 @@ function wireTestPaperUpload() {
           createdAt: firebase.firestore.FieldValue.serverTimestamp()
         });
       });
+      try { await damageBosses(TEST_PAPER_AWARD); } catch { /* best effort */ }
       statusEl.textContent = "";
       fileInput.value = "";
       toast(`Uploaded — +${TEST_PAPER_AWARD} marks awarded!`);
