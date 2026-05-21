@@ -440,6 +440,16 @@ function fmtTime(ts) {
   const d = ts.toDate ? ts.toDate() : new Date(ts);
   return d.toLocaleString();
 }
+// A student can attend multiple slots (e.g. a math class and a science class).
+// Older records stored a single `slot` string — read both shapes.
+function studentSlots(s) {
+  if (Array.isArray(s.slots)) return s.slots.filter(Boolean);
+  return s.slot ? [s.slot] : [];
+}
+function slotsText(s) {
+  const arr = studentSlots(s);
+  return arr.length ? arr.join(", ") : "—";
+}
 
 // ---------- AUTH ----------
 $("loginBtn").addEventListener("click", async () => {
@@ -584,7 +594,7 @@ function bootAdmin() {
     const marks = parseInt($("sMarks").value, 10) || 0;
     if (!name || !level || !slot) return toast("Name, level and slot are required");
     await db.collection("students").add({
-      name, level, slot, marks, uid: null, email: null,
+      name, level, slots: [slot], marks, uid: null, email: null,
       createdAt: firebase.firestore.FieldValue.serverTimestamp()
     });
     $("sName").value = ""; $("sMarks").value = "0";
@@ -600,9 +610,9 @@ function bootAdmin() {
     const sl = $("filterSlot").value;
     return allStudents.filter(s => {
       if (lv && s.level !== lv) return false;
-      if (sl && s.slot !== sl) return false;
+      if (sl && !studentSlots(s).includes(sl)) return false;
       if (q) {
-        const hay = `${s.name} ${s.level} ${s.slot}`.toLowerCase();
+        const hay = `${s.name} ${s.level} ${studentSlots(s).join(" ")}`.toLowerCase();
         if (!hay.includes(q)) return false;
       }
       return true;
@@ -616,7 +626,7 @@ function bootAdmin() {
     const prevSl = slotSel.value;
     const levels = [...new Set(allStudents.map(s => s.level).filter(Boolean))].sort();
     const slotPool = allStudents.filter(s => !prevLv || s.level === prevLv);
-    const slots = [...new Set(slotPool.map(s => s.slot).filter(Boolean))].sort();
+    const slots = [...new Set(slotPool.flatMap(s => studentSlots(s)))].sort();
     levelSel.innerHTML = `<option value="">All levels</option>` +
       levels.map(l => `<option ${l===prevLv?"selected":""}>${escapeHtml(l)}</option>`).join("");
     slotSel.innerHTML = `<option value="">All slots</option>` +
@@ -629,7 +639,7 @@ function bootAdmin() {
       <tr data-id="${s.id}">
         <td>${escapeHtml(s.name)}</td>
         <td>${escapeHtml(s.level)}</td>
-        <td>${escapeHtml(s.slot)}</td>
+        <td>${escapeHtml(slotsText(s))}</td>
         <td>
           <input type="number" value="${s.marks||0}" data-field="marks" style="width:90px"/>
         </td>
@@ -637,6 +647,7 @@ function bootAdmin() {
         <td style="text-align:right; white-space:nowrap">
           <button class="btn ghost" data-act="save">Save</button>
           <button class="btn ghost" data-act="edit">Edit</button>
+          <button class="btn ghost" data-act="addslot">Add slot</button>
           <button class="btn ghost" data-act="unlink" ${s.uid ? "" : "disabled"}>Unlink</button>
           <button class="btn ghost" data-act="del">Delete</button>
         </td>
@@ -706,6 +717,9 @@ function bootAdmin() {
     } else if (act === "edit") {
       const s = allStudents.find(x => x.id === id);
       if (s) openEditStudentModal(s);
+    } else if (act === "addslot") {
+      const s = allStudents.find(x => x.id === id);
+      if (s) openAddSlotModal(s);
     } else if (act === "del") {
       if (!confirm("Delete this student? This cannot be undone.")) return;
       await db.collection("students").doc(id).delete();
@@ -722,7 +736,11 @@ function bootAdmin() {
       <h3 style="margin-top:0">Edit student</h3>
       <div class="field"><label>Name</label><input id="eName" value="${escapeHtml(s.name||"")}" /></div>
       <div class="field"><label>Level</label><input id="eLevel" value="${escapeHtml(s.level||"")}" /></div>
-      <div class="field"><label>Time slot</label><input id="eSlot" value="${escapeHtml(s.slot||"")}" /></div>
+      <div class="field">
+        <label>Time slots</label>
+        <input id="eSlots" value="${escapeHtml(studentSlots(s).join(", "))}" />
+        <span class="muted small">Separate multiple slots with commas — the student attends each one (e.g. their math and science classes).</span>
+      </div>
       <div class="field"><label>Marks</label><input id="eMarks" type="number" value="${s.marks||0}" /></div>
       <div class="row" style="justify-content:flex-end">
         <button class="btn ghost" id="cancelEdit">Cancel</button>
@@ -733,12 +751,15 @@ function bootAdmin() {
     $("saveEdit").onclick = async () => {
       const name = $("eName").value.trim();
       const level = $("eLevel").value.trim();
-      const slot = $("eSlot").value.trim();
+      const slots = [...new Set($("eSlots").value.split(",").map(x => x.trim()).filter(Boolean))];
       const marks = parseInt($("eMarks").value, 10) || 0;
-      if (!name || !level || !slot) return toast("Name, level and slot are required");
+      if (!name || !level || !slots.length) return toast("Name, level and at least one slot are required");
       $("saveEdit").disabled = true;
       try {
-        await db.collection("students").doc(s.id).update({ name, level, slot, marks });
+        await db.collection("students").doc(s.id).update({
+          name, level, slots, marks,
+          slot: firebase.firestore.FieldValue.delete()
+        });
         closeModal();
         toast("Student updated");
       } catch (e) {
@@ -748,8 +769,44 @@ function bootAdmin() {
     };
   }
 
+  function openAddSlotModal(s) {
+    const current = studentSlots(s);
+    const allSlots = [...new Set(allStudents.flatMap(x => studentSlots(x)))].sort();
+    openModal(`
+      <h3 style="margin-top:0">Add ${escapeHtml(s.name)} to another slot</h3>
+      <p class="muted small">${escapeHtml(s.name)} currently attends: ${escapeHtml(current.join(", ") || "no slots")}. Add another time slot so they can take an extra lesson — for example a science class on top of their math class.</p>
+      <div class="field">
+        <label>Additional time slot</label>
+        <input id="addSlotInput" list="addSlotList" placeholder="e.g. Wed 4-6pm" />
+        <datalist id="addSlotList">${allSlots.map(x => `<option value="${escapeHtml(x)}"></option>`).join("")}</datalist>
+      </div>
+      <div class="row" style="justify-content:flex-end">
+        <button class="btn ghost" id="cancelAddSlot">Cancel</button>
+        <button class="btn" id="confirmAddSlot">Add slot</button>
+      </div>
+    `);
+    $("cancelAddSlot").onclick = closeModal;
+    $("confirmAddSlot").onclick = async () => {
+      const slot = $("addSlotInput").value.trim();
+      if (!slot) return toast("Enter a slot name");
+      if (current.includes(slot)) return toast("Student is already in that slot");
+      $("confirmAddSlot").disabled = true;
+      try {
+        await db.collection("students").doc(s.id).update({
+          slots: [...current, slot],
+          slot: firebase.firestore.FieldValue.delete()
+        });
+        closeModal();
+        toast("Slot added");
+      } catch (e) {
+        $("confirmAddSlot").disabled = false;
+        toast("Could not add slot: " + (e.message || e));
+      }
+    };
+  }
+
   $("renameSlotBtn").onclick = () => {
-    const slots = [...new Set(allStudents.map(s => s.slot).filter(Boolean))].sort();
+    const slots = [...new Set(allStudents.flatMap(s => studentSlots(s)))].sort();
     if (!slots.length) return toast("No slots to rename");
     const currentSlot = $("filterSlot").value;
     openModal(`
@@ -773,7 +830,7 @@ function bootAdmin() {
       const newSlot = $("newSlot").value.trim();
       if (!newSlot) return toast("Enter a new slot name");
       if (newSlot === oldSlot) return toast("New name matches the existing slot");
-      const targets = allStudents.filter(s => s.slot === oldSlot);
+      const targets = allStudents.filter(s => studentSlots(s).includes(oldSlot));
       if (!targets.length) return toast("No students in that slot");
       if (!confirm(`Rename slot "${oldSlot}" → "${newSlot}" for ${targets.length} student(s)?`)) return;
       $("confirmRename").disabled = true;
@@ -782,7 +839,11 @@ function bootAdmin() {
         for (let i = 0; i < targets.length; i += chunkSize) {
           const batch = db.batch();
           for (const s of targets.slice(i, i + chunkSize)) {
-            batch.update(db.collection("students").doc(s.id), { slot: newSlot });
+            const updated = [...new Set(studentSlots(s).map(x => x === oldSlot ? newSlot : x))];
+            batch.update(db.collection("students").doc(s.id), {
+              slots: updated,
+              slot: firebase.firestore.FieldValue.delete()
+            });
           }
           await batch.commit();
         }
@@ -985,7 +1046,7 @@ async function bootStudent() {
 
   levelSel.onchange = () => {
     const lv = levelSel.value;
-    const slots = [...new Set(unclaimed.filter(s => s.level === lv).map(s => s.slot))].sort();
+    const slots = [...new Set(unclaimed.filter(s => s.level === lv).flatMap(s => studentSlots(s)))].sort();
     slotSel.innerHTML = `<option value="">— choose —</option>` + slots.map(s => `<option>${escapeHtml(s)}</option>`).join("");
     slotSel.disabled = !lv;
     nameSel.innerHTML = `<option value="">— choose slot first —</option>`; nameSel.disabled = true;
@@ -993,7 +1054,7 @@ async function bootStudent() {
   };
   slotSel.onchange = () => {
     const lv = levelSel.value, sl = slotSel.value;
-    const names = unclaimed.filter(s => s.level === lv && s.slot === sl);
+    const names = unclaimed.filter(s => s.level === lv && studentSlots(s).includes(sl));
     nameSel.innerHTML = `<option value="">— choose —</option>` + names.map(s => `<option value="${s.id}">${escapeHtml(s.name)}</option>`).join("");
     nameSel.disabled = !sl;
     $("linkStudentBtn").disabled = true;
@@ -1021,7 +1082,7 @@ function showStudentMain() {
   show($("studentView"));
   renderPodium();
   $("studentNameTop").textContent = myStudent.name;
-  $("studentClassTop").textContent = `${myStudent.level} · ${myStudent.slot}`;
+  $("studentClassTop").textContent = `${myStudent.level} · ${studentSlots(myStudent).join(", ")}`;
   $("balanceNum").textContent = myStudent.marks || 0;
 
   $("bonusBehaviours").innerHTML = BONUS_BEHAVIOURS.map(b =>
@@ -1131,7 +1192,7 @@ function openClaimModal(reward) {
           uid: currentUser.uid,
           studentId: myStudent.id,
           studentName: s.name,
-          studentClass: `${s.level} · ${s.slot}`,
+          studentClass: `${s.level} · ${studentSlots(s).join(", ")}`,
           rewardId: reward.id,
           rewardName: r.name,
           marksSpent: r.marksRequired,
@@ -1188,7 +1249,7 @@ function wireTestPaperUpload() {
           uid: currentUser.uid,
           studentId: myStudent.id,
           studentName: s.name,
-          studentClass: `${s.level} · ${s.slot}`,
+          studentClass: `${s.level} · ${studentSlots(s).join(", ")}`,
           fileName: file.name,
           size: file.size,
           storagePath: path,
