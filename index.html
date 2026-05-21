@@ -89,14 +89,15 @@
     text-shadow: 0 2px 5px rgba(0,0,0,.7);
   }
   .arena-sub { text-align: center; color: #cdbb8e; font-size: 13px; margin: 0 0 16px; }
+  #studentBosses { grid-template-columns: 1fr; }
   .boss-card {
-    position: relative; display: flex; flex-direction: column; overflow: hidden;
+    position: relative; display: flex; flex-direction: row; overflow: hidden;
     border: 2px solid #7a5a2e; border-radius: 10px; color: #2e2310;
     background: linear-gradient(180deg, #f4e8cc, #e6d2a6);
     box-shadow: 0 5px 14px rgba(0,0,0,.4);
   }
-  .boss-card img { width: 100%; aspect-ratio: 4/3; object-fit: cover; background: #1c1712; border-bottom: 2px solid #7a5a2e; }
-  .boss-card .body { padding: 12px 13px 14px; display: flex; flex-direction: column; gap: 8px; }
+  .boss-card img { width: 260px; flex-shrink: 0; align-self: stretch; object-fit: cover; background: #1c1712; border-right: 2px solid #7a5a2e; }
+  .boss-card .body { flex: 1; padding: 14px 18px; display: flex; flex-direction: column; gap: 8px; justify-content: center; }
   .boss-card .bname { font-family: "Cinzel", Georgia, serif; font-weight: 700; font-size: 17px; color: #3a2c12; }
   .boss-card .bdesc { font-size: 13px; color: #5e4c2a; line-height: 1.4; }
   .boss-card .hpbar { height: 20px; border: 2px solid #3a2c18; background: #2a2014; border-radius: 6px; }
@@ -154,6 +155,9 @@
     .container { padding: 12px; }
     .card { padding: 12px; }
     .podium { grid-template-columns: 1fr; }
+    .boss-card { flex-direction: column; }
+    .boss-card img { width: 100%; aspect-ratio: 4/3; align-self: auto; border-right: 0; border-bottom: 2px solid #7a5a2e; }
+    .slain-stamp { top: 50%; }
   }
 </style>
 </head>
