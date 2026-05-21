@@ -66,6 +66,10 @@
   .reward-card .body { padding: 10px 12px; display: flex; flex-direction: column; gap: 6px; flex: 1; }
   .reward-card .title { font-weight: 600; }
   .reward-card .foot { display: flex; gap: 8px; align-items: center; justify-content: space-between; padding: 10px 12px; border-top: 1px solid var(--line); }
+  .hpbar { background: #f0f1f5; border: 1px solid var(--line); border-radius: 999px; height: 16px; overflow: hidden; }
+  .hpbar > div { background: linear-gradient(90deg,#dc2626,#f59e0b); height: 100%; transition: width .35s ease; }
+  .boss-defeated { opacity: .72; }
+  .boss-defeated .hpbar > div { background: #9ca3af; }
   .table { width: 100%; border-collapse: collapse; }
   .table th, .table td { padding: 9px 10px; border-bottom: 1px solid var(--line); text-align: left; font-size: 14px; vertical-align: middle; }
   .table th { font-weight: 600; color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .04em; }
@@ -131,6 +135,10 @@
                  && resource.data.uid == null);
             }
             match /rewards/{id} {
+              allow read: if request.auth != null;
+              allow write: if isAdmin();
+            }
+            match /bosses/{id} {
               allow read: if request.auth != null;
               allow write: if isAdmin();
             }
@@ -207,6 +215,7 @@
       <div class="tabs">
         <button class="tab active" data-tab="adm-students">Students</button>
         <button class="tab" data-tab="adm-rewards">Rewards</button>
+        <button class="tab" data-tab="adm-bosses">Bosses</button>
         <button class="tab" data-tab="adm-claims">Pending shipments <span class="pill" id="pendingPill" style="margin-left:6px; display:none;">0</span></button>
         <button class="tab" data-tab="adm-papers">Test papers <span class="pill" id="papersPill" style="margin-left:6px; display:none;">0</span></button>
       </div>
@@ -265,6 +274,33 @@
         <div class="card">
           <h3 style="margin-top:0">All rewards</h3>
           <div class="grid" id="adminRewards"></div>
+        </div>
+      </div>
+
+      <!-- Bosses tab -->
+      <div id="adm-bosses" class="tab-pane hidden">
+        <div class="card">
+          <h3 style="margin-top:0">Add boss</h3>
+          <p class="muted small" style="margin-top:-6px">Click the box below, then paste an image (Ctrl/Cmd+V) of the boss.</p>
+          <div class="paste-zone" id="bossPasteZone" tabindex="0">Click here and paste an image</div>
+          <div class="row" style="margin-top:12px">
+            <div class="grow field"><label>Boss name</label><input id="bName" placeholder="e.g. Dragon of Division" /></div>
+            <div class="field" style="width:120px"><label>HP</label><input id="bHp" type="number" value="100" /></div>
+            <div class="field" style="width:170px"><label>Class reward (marks each)</label><input id="bReward" type="number" value="20" /></div>
+          </div>
+          <div class="field"><label>Description</label><textarea id="bDesc" rows="3" placeholder="Describe the boss…"></textarea></div>
+          <div class="field">
+            <label>Class (time slot this boss belongs to)</label>
+            <input id="bSlot" list="bossSlotList" placeholder="e.g. Mon 4-6pm" />
+            <datalist id="bossSlotList"></datalist>
+            <span class="muted small">Every student in this slot sees the boss and shares the reward when it's defeated.</span>
+          </div>
+          <button class="btn" id="addBossBtn">Add boss</button>
+        </div>
+        <div class="card">
+          <h3 style="margin-top:0">All bosses</h3>
+          <p class="muted small" style="margin-top:-6px">Enter the points to give the boss — it loses that much health. When HP hits 0 the whole class is rewarded.</p>
+          <div class="grid" id="adminBosses"></div>
         </div>
       </div>
 
@@ -347,6 +383,11 @@
             <tbody></tbody>
           </table>
         </div>
+      </div>
+      <div class="card hidden" id="bossSection">
+        <h3 style="margin-top:0">⚔️ Class Boss</h3>
+        <p class="muted small" style="margin-top:-6px">Earn marks as a class to defeat the boss — every point your class earns chips away at its health, and beating it rewards everyone!</p>
+        <div class="grid" id="studentBosses"></div>
       </div>
       <div class="card">
         <h3 style="margin-top:0">Choose your reward</h3>
@@ -464,7 +505,7 @@ $("logoutBtn").addEventListener("click", () => auth.signOut());
 
 let currentUser = null;
 let myStudent = null;            // student doc {id,...} once linked
-let unsubStudents, unsubRewards, unsubClaims, unsubMyClaims, unsubMyStudent, unsubPapers, unsubMyPapers, unsubBranding, unsubPodium;
+let unsubStudents, unsubRewards, unsubClaims, unsubMyClaims, unsubMyStudent, unsubPapers, unsubMyPapers, unsubBranding, unsubPodium, unsubBosses;
 let podiumTop = [];
 
 function applyLogo(dataUrl) {
@@ -487,8 +528,8 @@ function applyLogo(dataUrl) {
 
 auth.onAuthStateChanged(async (user) => {
   // Tear down any prior listeners
-  [unsubStudents, unsubRewards, unsubClaims, unsubMyClaims, unsubMyStudent, unsubPapers, unsubMyPapers, unsubBranding, unsubPodium].forEach(fn => { try { fn && fn(); } catch{} });
-  unsubStudents = unsubRewards = unsubClaims = unsubMyClaims = unsubMyStudent = unsubPapers = unsubMyPapers = unsubBranding = unsubPodium = null;
+  [unsubStudents, unsubRewards, unsubClaims, unsubMyClaims, unsubMyStudent, unsubPapers, unsubMyPapers, unsubBranding, unsubPodium, unsubBosses].forEach(fn => { try { fn && fn(); } catch{} });
+  unsubStudents = unsubRewards = unsubClaims = unsubMyClaims = unsubMyStudent = unsubPapers = unsubMyPapers = unsubBranding = unsubPodium = unsubBosses = null;
   myStudent = null;
   podiumTop = [];
   hide($("prizePodium"));
@@ -631,6 +672,8 @@ function bootAdmin() {
       levels.map(l => `<option ${l===prevLv?"selected":""}>${escapeHtml(l)}</option>`).join("");
     slotSel.innerHTML = `<option value="">All slots</option>` +
       slots.map(s => `<option ${s===prevSl?"selected":""}>${escapeHtml(s)}</option>`).join("");
+    const allSlots = [...new Set(allStudents.flatMap(s => studentSlots(s)))].sort();
+    $("bossSlotList").innerHTML = allSlots.map(s => `<option value="${escapeHtml(s)}"></option>`).join("");
   }
 
   function renderStudents() {
@@ -1019,6 +1062,154 @@ function bootAdmin() {
       await db.collection("claims").doc(id).delete();
     }
   });
+
+  // Bosses: paste image
+  const bossPasteZone = $("bossPasteZone");
+  let bossPastedDataUrl = null;
+  const setBossImage = async (file) => {
+    if (!file || !file.type.startsWith("image/")) return toast("That doesn't look like an image");
+    bossPastedDataUrl = await compressImage(file, 900, 0.82);
+    bossPasteZone.classList.add("has");
+    bossPasteZone.innerHTML = `<img src="${bossPastedDataUrl}" alt="boss preview" />`;
+  };
+  bossPasteZone.addEventListener("click", () => bossPasteZone.focus());
+  bossPasteZone.addEventListener("paste", async (e) => {
+    const items = e.clipboardData?.items || [];
+    for (const it of items) {
+      if (it.type && it.type.startsWith("image/")) { await setBossImage(it.getAsFile()); return; }
+    }
+    toast("No image in clipboard");
+  });
+  bossPasteZone.addEventListener("dragover", e => e.preventDefault());
+  bossPasteZone.addEventListener("drop", async (e) => {
+    e.preventDefault();
+    const f = e.dataTransfer?.files?.[0];
+    if (f) await setBossImage(f);
+  });
+
+  $("addBossBtn").onclick = async () => {
+    const name = $("bName").value.trim();
+    const description = $("bDesc").value.trim();
+    const hp = parseInt($("bHp").value, 10) || 0;
+    const reward = parseInt($("bReward").value, 10) || 0;
+    const targetSlot = $("bSlot").value.trim();
+    if (!name) return toast("Boss name required");
+    if (!bossPastedDataUrl) return toast("Paste a boss image first");
+    if (bossPastedDataUrl.length > 900_000) return toast("Image too large, try a smaller one");
+    if (hp <= 0) return toast("HP must be greater than 0");
+    if (!targetSlot) return toast("Choose the class (time slot) for this boss");
+    await db.collection("bosses").add({
+      name, description, image: bossPastedDataUrl,
+      maxHp: hp, hp, reward, targetSlot,
+      defeated: false, active: true,
+      createdAt: firebase.firestore.FieldValue.serverTimestamp()
+    });
+    $("bName").value = ""; $("bDesc").value = ""; $("bHp").value = "100";
+    $("bReward").value = "20"; $("bSlot").value = "";
+    bossPastedDataUrl = null;
+    bossPasteZone.classList.remove("has");
+    bossPasteZone.innerHTML = "Click here and paste an image";
+    toast("Boss added");
+  };
+
+  function renderAdminBosses(bosses) {
+    $("adminBosses").innerHTML = bosses.map(b => {
+      const max = b.maxHp || b.hp || 1;
+      const hp = b.hp || 0;
+      const pct = Math.max(0, Math.min(100, Math.round((hp / max) * 100)));
+      const defeated = b.defeated || hp <= 0;
+      return `
+        <div class="reward-card${defeated ? " boss-defeated" : ""}" data-id="${b.id}">
+          <img src="${b.image}" alt="" />
+          <div class="body">
+            <div class="title">${escapeHtml(b.name)} ${defeated ? `<span class="pill" style="background:#dcfce7;color:#16a34a">Defeated</span>` : ""}</div>
+            ${b.description ? `<div class="muted small">${escapeHtml(b.description)}</div>` : ""}
+            <div class="hpbar"><div style="width:${pct}%"></div></div>
+            <div class="muted small">${hp} / ${max} HP · Class: ${escapeHtml(b.targetSlot || "—")}</div>
+            <div class="small">Reward: <strong>+${b.reward || 0} marks</strong> to each student when defeated</div>
+            ${defeated ? "" : `
+              <div class="row" style="margin-top:4px">
+                <div style="width:110px"><input type="number" data-dmg placeholder="Points" min="1" /></div>
+                <button class="btn" data-act="damage">Deal damage</button>
+              </div>`}
+          </div>
+          <div class="foot">
+            <span class="chip">${b.active === false ? "Hidden" : "Active"}</span>
+            <span>
+              <button class="btn ghost" data-act="toggle">${b.active === false ? "Show" : "Hide"}</button>
+              <button class="btn ghost" data-act="del">Delete</button>
+            </span>
+          </div>
+        </div>`;
+    }).join("") || `<div class="muted">No bosses yet</div>`;
+  }
+
+  unsubBosses = db.collection("bosses").orderBy("createdAt", "desc").onSnapshot(snap => {
+    const bosses = [];
+    snap.forEach(doc => bosses.push({ id: doc.id, ...doc.data() }));
+    renderAdminBosses(bosses);
+  });
+
+  async function dealBossDamage(bossId, dmg) {
+    let defeatedNow = false, boss = null;
+    await db.runTransaction(async (tx) => {
+      const ref = db.collection("bosses").doc(bossId);
+      const snap = await tx.get(ref);
+      if (!snap.exists) throw new Error("Boss not found");
+      boss = snap.data();
+      if (boss.defeated || (boss.hp || 0) <= 0) throw new Error("Boss already defeated");
+      const newHp = Math.max(0, (boss.hp || 0) - dmg);
+      const upd = { hp: newHp };
+      if (newHp === 0) {
+        upd.defeated = true;
+        upd.defeatedAt = firebase.firestore.FieldValue.serverTimestamp();
+        defeatedNow = true;
+      }
+      tx.update(ref, upd);
+    });
+    if (defeatedNow) {
+      const reward = boss.reward || 0;
+      const targets = allStudents.filter(s => studentSlots(s).includes(boss.targetSlot));
+      if (reward > 0 && targets.length) {
+        const chunkSize = 400;
+        for (let i = 0; i < targets.length; i += chunkSize) {
+          const batch = db.batch();
+          for (const s of targets.slice(i, i + chunkSize)) {
+            batch.update(db.collection("students").doc(s.id), { marks: (s.marks || 0) + reward });
+          }
+          await batch.commit();
+        }
+      }
+      toast(`Boss defeated! +${reward} marks to ${targets.length} student(s) in ${boss.targetSlot}`);
+    } else {
+      toast(`Dealt ${dmg} damage`);
+    }
+  }
+
+  $("adminBosses").addEventListener("click", async (e) => {
+    const btn = e.target.closest("button"); if (!btn) return;
+    const card = e.target.closest(".reward-card"); const id = card?.dataset.id; if (!id) return;
+    const act = btn.dataset.act;
+    if (act === "del") {
+      if (!confirm("Delete this boss?")) return;
+      await db.collection("bosses").doc(id).delete();
+      toast("Deleted");
+    } else if (act === "toggle") {
+      const doc = await db.collection("bosses").doc(id).get();
+      await db.collection("bosses").doc(id).update({ active: doc.data().active === false });
+    } else if (act === "damage") {
+      const dmg = parseInt(card.querySelector("input[data-dmg]").value, 10);
+      if (!dmg || dmg <= 0) return toast("Enter the points to give the boss");
+      btn.disabled = true;
+      try {
+        await dealBossDamage(id, dmg);
+      } catch (err) {
+        toast(err.message || "Could not deal damage");
+      } finally {
+        btn.disabled = false;
+      }
+    }
+  });
 }
 
 // ---------- STUDENT ----------
@@ -1131,6 +1322,45 @@ function showStudentMain() {
         <td><span class="chip">${c.status}</span></td>
       </tr>`).join("") || `<tr><td colspan="4" class="center muted">Nothing yet</td></tr>`;
   });
+
+  // Class boss
+  unsubBosses = db.collection("bosses").onSnapshot(snap => {
+    const mySlots = studentSlots(myStudent);
+    const bosses = [];
+    snap.forEach(d => {
+      const b = { id: d.id, ...d.data() };
+      if (b.active !== false && mySlots.includes(b.targetSlot)) bosses.push(b);
+    });
+    bosses.sort((a, b) => (b.createdAt?.toMillis?.() || 0) - (a.createdAt?.toMillis?.() || 0));
+    renderStudentBosses(bosses);
+  });
+}
+
+function renderStudentBosses(bosses) {
+  const section = $("bossSection");
+  if (!bosses.length) {
+    hide(section);
+    $("studentBosses").innerHTML = "";
+    return;
+  }
+  show(section);
+  $("studentBosses").innerHTML = bosses.map(b => {
+    const max = b.maxHp || b.hp || 1;
+    const hp = b.hp || 0;
+    const pct = Math.max(0, Math.min(100, Math.round((hp / max) * 100)));
+    const defeated = b.defeated || hp <= 0;
+    return `
+      <div class="reward-card${defeated ? " boss-defeated" : ""}">
+        <img src="${b.image}" alt="" />
+        <div class="body">
+          <div class="title">${escapeHtml(b.name)} ${defeated ? `<span class="pill" style="background:#dcfce7;color:#16a34a">Defeated!</span>` : ""}</div>
+          ${b.description ? `<div class="muted small">${escapeHtml(b.description)}</div>` : ""}
+          <div class="hpbar"><div style="width:${pct}%"></div></div>
+          <div class="muted small">${hp} / ${max} HP</div>
+          <div class="small">Class reward: <strong>+${b.reward || 0} marks each</strong>${defeated ? " — claimed!" : " when defeated"}</div>
+        </div>
+      </div>`;
+  }).join("");
 }
 
 function renderStudentRewards(rewards) {
