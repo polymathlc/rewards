@@ -4,6 +4,9 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
 <title>Polymath Learning Centre Point System</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700;900&display=swap" rel="stylesheet" />
 <style>
   :root {
     --bg: #f6f7fb;
@@ -70,6 +73,48 @@
   .hpbar > div { background: linear-gradient(90deg,#dc2626,#f59e0b); height: 100%; transition: width .35s ease; }
   .boss-defeated { opacity: .72; }
   .boss-defeated .hpbar > div { background: #9ca3af; }
+  /* Medieval boss arena */
+  .boss-arena {
+    position: relative; margin-bottom: 16px; padding: 22px 18px 24px;
+    border: 3px solid #7a5a2e; border-radius: 14px; color: #ecdfc2;
+    background:
+      radial-gradient(ellipse at 50% -10%, rgba(255,214,140,.16), transparent 55%),
+      repeating-linear-gradient(0deg, #241c12, #241c12 3px, #2a2014 3px, #2a2014 6px);
+    box-shadow: inset 0 0 0 2px #4a3720, inset 0 0 70px rgba(0,0,0,.6), 0 10px 26px rgba(0,0,0,.3);
+  }
+  .arena-title {
+    font-family: "Cinzel", Georgia, "Times New Roman", serif;
+    text-align: center; font-size: 24px; font-weight: 900;
+    letter-spacing: .12em; color: #f4d27a; margin: 0 0 6px;
+    text-shadow: 0 2px 5px rgba(0,0,0,.7);
+  }
+  .arena-sub { text-align: center; color: #cdbb8e; font-size: 13px; margin: 0 0 16px; }
+  .boss-card {
+    position: relative; display: flex; flex-direction: column; overflow: hidden;
+    border: 2px solid #7a5a2e; border-radius: 10px; color: #2e2310;
+    background: linear-gradient(180deg, #f4e8cc, #e6d2a6);
+    box-shadow: 0 5px 14px rgba(0,0,0,.4);
+  }
+  .boss-card img { width: 100%; aspect-ratio: 4/3; object-fit: cover; background: #1c1712; border-bottom: 2px solid #7a5a2e; }
+  .boss-card .body { padding: 12px 13px 14px; display: flex; flex-direction: column; gap: 8px; }
+  .boss-card .bname { font-family: "Cinzel", Georgia, serif; font-weight: 700; font-size: 17px; color: #3a2c12; }
+  .boss-card .bdesc { font-size: 13px; color: #5e4c2a; line-height: 1.4; }
+  .boss-card .hpbar { height: 20px; border: 2px solid #3a2c18; background: #2a2014; border-radius: 6px; }
+  .boss-card .hpbar > div { background: linear-gradient(90deg,#a8281b,#e07b1a); }
+  .hp-label { font-family: "Cinzel", Georgia, serif; font-weight: 700; font-size: 13px; text-align: center; color: #3a2c12; }
+  .boss-reward-banner {
+    background: linear-gradient(180deg,#8a6526,#6b4f1f); color: #f7e7b6;
+    border-radius: 6px; padding: 6px 8px; font-size: 12px; font-weight: 700;
+    text-align: center; letter-spacing: .03em;
+  }
+  .boss-card.slain { filter: saturate(.5); }
+  .slain-stamp {
+    position: absolute; top: 16px; left: 50%; transform: translateX(-50%) rotate(-12deg);
+    font-family: "Cinzel", Georgia, serif; font-weight: 900; font-size: 22px;
+    color: #b91c1c; border: 4px solid #b91c1c; border-radius: 8px;
+    padding: 4px 14px; letter-spacing: .1em; background: rgba(255,255,255,.78);
+    text-transform: uppercase;
+  }
   .table { width: 100%; border-collapse: collapse; }
   .table th, .table td { padding: 9px 10px; border-bottom: 1px solid var(--line); text-align: left; font-size: 14px; vertical-align: middle; }
   .table th { font-weight: 600; color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .04em; }
@@ -289,17 +334,12 @@
             <div class="field" style="width:170px"><label>Class reward (marks each)</label><input id="bReward" type="number" value="20" /></div>
           </div>
           <div class="field"><label>Description</label><textarea id="bDesc" rows="3" placeholder="Describe the boss…"></textarea></div>
-          <div class="field">
-            <label>Class (time slot this boss belongs to)</label>
-            <input id="bSlot" list="bossSlotList" placeholder="e.g. Mon 4-6pm" />
-            <datalist id="bossSlotList"></datalist>
-            <span class="muted small">Every student in this slot sees the boss and shares the reward when it's defeated.</span>
-          </div>
+          <p class="muted small">This boss is shown to <strong>every student</strong>. When it's defeated, the reward marks go to all students.</p>
           <button class="btn" id="addBossBtn">Add boss</button>
         </div>
         <div class="card">
           <h3 style="margin-top:0">All bosses</h3>
-          <p class="muted small" style="margin-top:-6px">Enter the points to give the boss — it loses that much health. When HP hits 0 the whole class is rewarded.</p>
+          <p class="muted small" style="margin-top:-6px">Enter the points to give the boss — it loses that much health. When HP hits 0 every student is rewarded.</p>
           <div class="grid" id="adminBosses"></div>
         </div>
       </div>
@@ -347,6 +387,11 @@
 
     <!-- STUDENT: main -->
     <div id="studentView" class="hidden">
+      <div class="boss-arena hidden" id="bossSection">
+        <div class="arena-title">&#9876;&#65039; Boss Battle &#9876;&#65039;</div>
+        <p class="arena-sub">Hark! A foe stands before the whole school. Every mark earned strikes a blow — band together, vanquish the beast, and the spoils are shared by all!</p>
+        <div class="grid" id="studentBosses"></div>
+      </div>
       <div class="card">
         <div class="row">
           <div class="grow">
@@ -383,11 +428,6 @@
             <tbody></tbody>
           </table>
         </div>
-      </div>
-      <div class="card hidden" id="bossSection">
-        <h3 style="margin-top:0">⚔️ Class Boss</h3>
-        <p class="muted small" style="margin-top:-6px">Earn marks as a class to defeat the boss — every point your class earns chips away at its health, and beating it rewards everyone!</p>
-        <div class="grid" id="studentBosses"></div>
       </div>
       <div class="card">
         <h3 style="margin-top:0">Choose your reward</h3>
@@ -672,8 +712,6 @@ function bootAdmin() {
       levels.map(l => `<option ${l===prevLv?"selected":""}>${escapeHtml(l)}</option>`).join("");
     slotSel.innerHTML = `<option value="">All slots</option>` +
       slots.map(s => `<option ${s===prevSl?"selected":""}>${escapeHtml(s)}</option>`).join("");
-    const allSlots = [...new Set(allStudents.flatMap(s => studentSlots(s)))].sort();
-    $("bossSlotList").innerHTML = allSlots.map(s => `<option value="${escapeHtml(s)}"></option>`).join("");
   }
 
   function renderStudents() {
@@ -1092,20 +1130,18 @@ function bootAdmin() {
     const description = $("bDesc").value.trim();
     const hp = parseInt($("bHp").value, 10) || 0;
     const reward = parseInt($("bReward").value, 10) || 0;
-    const targetSlot = $("bSlot").value.trim();
     if (!name) return toast("Boss name required");
     if (!bossPastedDataUrl) return toast("Paste a boss image first");
     if (bossPastedDataUrl.length > 900_000) return toast("Image too large, try a smaller one");
     if (hp <= 0) return toast("HP must be greater than 0");
-    if (!targetSlot) return toast("Choose the class (time slot) for this boss");
     await db.collection("bosses").add({
       name, description, image: bossPastedDataUrl,
-      maxHp: hp, hp, reward, targetSlot,
+      maxHp: hp, hp, reward,
       defeated: false, active: true,
       createdAt: firebase.firestore.FieldValue.serverTimestamp()
     });
     $("bName").value = ""; $("bDesc").value = ""; $("bHp").value = "100";
-    $("bReward").value = "20"; $("bSlot").value = "";
+    $("bReward").value = "20";
     bossPastedDataUrl = null;
     bossPasteZone.classList.remove("has");
     bossPasteZone.innerHTML = "Click here and paste an image";
@@ -1125,8 +1161,8 @@ function bootAdmin() {
             <div class="title">${escapeHtml(b.name)} ${defeated ? `<span class="pill" style="background:#dcfce7;color:#16a34a">Defeated</span>` : ""}</div>
             ${b.description ? `<div class="muted small">${escapeHtml(b.description)}</div>` : ""}
             <div class="hpbar"><div style="width:${pct}%"></div></div>
-            <div class="muted small">${hp} / ${max} HP · Class: ${escapeHtml(b.targetSlot || "—")}</div>
-            <div class="small">Reward: <strong>+${b.reward || 0} marks</strong> to each student when defeated</div>
+            <div class="muted small">${hp} / ${max} HP</div>
+            <div class="small">Reward: <strong>+${b.reward || 0} marks</strong> to every student when defeated</div>
             ${defeated ? "" : `
               <div class="row" style="margin-top:4px">
                 <div style="width:110px"><input type="number" data-dmg placeholder="Points" min="1" /></div>
@@ -1169,7 +1205,7 @@ function bootAdmin() {
     });
     if (defeatedNow) {
       const reward = boss.reward || 0;
-      const targets = allStudents.filter(s => studentSlots(s).includes(boss.targetSlot));
+      const targets = allStudents.slice();
       if (reward > 0 && targets.length) {
         const chunkSize = 400;
         for (let i = 0; i < targets.length; i += chunkSize) {
@@ -1180,7 +1216,7 @@ function bootAdmin() {
           await batch.commit();
         }
       }
-      toast(`Boss defeated! +${reward} marks to ${targets.length} student(s) in ${boss.targetSlot}`);
+      toast(`Boss defeated! +${reward} marks to all ${targets.length} student(s)`);
     } else {
       toast(`Dealt ${dmg} damage`);
     }
@@ -1323,13 +1359,12 @@ function showStudentMain() {
       </tr>`).join("") || `<tr><td colspan="4" class="center muted">Nothing yet</td></tr>`;
   });
 
-  // Class boss
+  // Boss battle (shown to all students)
   unsubBosses = db.collection("bosses").onSnapshot(snap => {
-    const mySlots = studentSlots(myStudent);
     const bosses = [];
     snap.forEach(d => {
       const b = { id: d.id, ...d.data() };
-      if (b.active !== false && mySlots.includes(b.targetSlot)) bosses.push(b);
+      if (b.active !== false) bosses.push(b);
     });
     bosses.sort((a, b) => (b.createdAt?.toMillis?.() || 0) - (a.createdAt?.toMillis?.() || 0));
     renderStudentBosses(bosses);
@@ -1348,16 +1383,19 @@ function renderStudentBosses(bosses) {
     const max = b.maxHp || b.hp || 1;
     const hp = b.hp || 0;
     const pct = Math.max(0, Math.min(100, Math.round((hp / max) * 100)));
-    const defeated = b.defeated || hp <= 0;
+    const slain = b.defeated || hp <= 0;
     return `
-      <div class="reward-card${defeated ? " boss-defeated" : ""}">
+      <div class="boss-card${slain ? " slain" : ""}">
+        ${slain ? `<div class="slain-stamp">Vanquished</div>` : ""}
         <img src="${b.image}" alt="" />
         <div class="body">
-          <div class="title">${escapeHtml(b.name)} ${defeated ? `<span class="pill" style="background:#dcfce7;color:#16a34a">Defeated!</span>` : ""}</div>
-          ${b.description ? `<div class="muted small">${escapeHtml(b.description)}</div>` : ""}
+          <div class="bname">${escapeHtml(b.name)}</div>
+          ${b.description ? `<div class="bdesc">${escapeHtml(b.description)}</div>` : ""}
           <div class="hpbar"><div style="width:${pct}%"></div></div>
-          <div class="muted small">${hp} / ${max} HP</div>
-          <div class="small">Class reward: <strong>+${b.reward || 0} marks each</strong>${defeated ? " — claimed!" : " when defeated"}</div>
+          <div class="hp-label">${hp} / ${max} HP</div>
+          <div class="boss-reward-banner">${slain
+            ? `Vanquished! &#43;${b.reward || 0} marks awarded to all`
+            : `Bounty: &#43;${b.reward || 0} marks to all when slain`}</div>
         </div>
       </div>`;
   }).join("");
