@@ -288,11 +288,14 @@
           <h3 style="margin-top:0">Add student</h3>
           <div class="row">
             <div class="grow field"><label>Name</label><input id="sName" placeholder="e.g. Aisha Tan" /></div>
-            <div class="grow field"><label>Level</label><input id="sLevel" placeholder="e.g. P5" /></div>
-            <div class="grow field"><label>Time slot</label><input id="sSlot" placeholder="e.g. Mon 4-6pm" /></div>
+            <div class="grow field"><label>Level</label><input id="sLevel" list="levelOptions" placeholder="e.g. P5" /></div>
+            <div class="grow field"><label>Time slot</label><input id="sSlot" list="slotOptions" placeholder="e.g. Science - Tuesday 7pm" /></div>
             <div class="field" style="width:120px"><label>Starting marks</label><input id="sMarks" type="number" value="0" /></div>
           </div>
+          <p class="muted small">Pick an existing level/slot from the list to keep them consistent, or type a new one to create it.</p>
           <button class="btn" id="addStudentBtn">Add student</button>
+          <datalist id="levelOptions"></datalist>
+          <datalist id="slotOptions"></datalist>
         </div>
         <div class="card">
           <h3 style="margin-top:0">All students</h3>
@@ -796,10 +799,18 @@ function bootAdmin() {
     $("bulkScopeLabel").textContent = `Bulk action targets ${list.length} student${list.length===1?"":"s"} (${scope}).`;
   }
 
+  function refreshDataLists() {
+    const levels = [...new Set(allStudents.map(s => s.level).filter(Boolean))].sort();
+    const slots = [...new Set(allStudents.flatMap(s => studentSlots(s)))].sort();
+    $("levelOptions").innerHTML = levels.map(l => `<option value="${escapeHtml(l)}"></option>`).join("");
+    $("slotOptions").innerHTML = slots.map(s => `<option value="${escapeHtml(s)}"></option>`).join("");
+  }
+
   unsubStudents = db.collection("students").orderBy("name").onSnapshot(snap => {
     allStudents = [];
     snap.forEach(doc => allStudents.push({ id: doc.id, ...doc.data() }));
     refreshFilterOptions();
+    refreshDataLists();
     renderStudents();
   });
 
@@ -885,7 +896,7 @@ function bootAdmin() {
     openModal(`
       <h3 style="margin-top:0">Edit student</h3>
       <div class="field"><label>Name</label><input id="eName" value="${escapeHtml(s.name||"")}" /></div>
-      <div class="field"><label>Level</label><input id="eLevel" value="${escapeHtml(s.level||"")}" /></div>
+      <div class="field"><label>Level</label><input id="eLevel" list="levelOptions" value="${escapeHtml(s.level||"")}" /></div>
       <div class="field">
         <label>Time slots</label>
         <input id="eSlots" value="${escapeHtml(studentSlots(s).join(", "))}" />
