@@ -220,6 +220,10 @@
               allow read: if request.auth != null;
               allow write: if isAdmin();
             }
+            match /awards/{id} {
+              allow read, create: if request.auth != null;
+              allow update, delete: if isAdmin();
+            }
           }
         }
 
@@ -311,6 +315,7 @@
           <div class="row" style="margin-bottom:10px; padding:10px; background:#fafbff; border:1px solid var(--line); border-radius:8px">
             <div class="muted small grow" id="bulkScopeLabel">Showing all students.</div>
             <div style="width:120px"><input id="bulkPoints" type="number" placeholder="Points" /></div>
+            <div style="width:160px"><input id="bulkReason" type="text" placeholder="Reason" /></div>
             <button class="btn" id="bulkAddBtn">Add points to filtered</button>
             <button class="btn ghost" id="renameSlotBtn">Rename slot…</button>
             <button class="btn ghost" id="migrateLevelsBtn">Migrate levels/slots…</button>
@@ -542,6 +547,25 @@ function fmtTime(ts) {
   const d = ts.toDate ? ts.toDate() : new Date(ts);
   return d.toLocaleString();
 }
+// Append-only record of every marks change, so totals stay auditable and
+// individual awards can be undone.
+function awardDoc(student, delta, reason, source) {
+  return {
+    studentId: student.id,
+    studentName: student.name || "",
+    delta,
+    reason: reason || "",
+    source: source || "manual",
+    by: (typeof currentUser !== "undefined" && currentUser?.email) || "system",
+    undone: false,
+    createdAt: firebase.firestore.FieldValue.serverTimestamp()
+  };
+}
+async function logAward(student, delta, reason, source) {
+  try {
+    await db.collection("awards").add(awardDoc(student, delta, reason, source));
+  } catch (e) { /* best effort — never block the points update */ }
+}
 // A student can attend multiple slots (e.g. a math class and a science class).
 // Older records stored a single `slot` string — read both shapes.
 function studentSlots(s) {
@@ -725,10 +749,11 @@ function bootAdmin() {
     const slot = $("sSlot").value.trim();
     const marks = parseInt($("sMarks").value, 10) || 0;
     if (!name || !level || !slot) return toast("Name, level and slot are required");
-    await db.collection("students").add({
+    const ref = await db.collection("students").add({
       name, level, slots: [slot], marks, uid: null, email: null,
       createdAt: firebase.firestore.FieldValue.serverTimestamp()
     });
+    if (marks) await logAward({ id: ref.id, name }, marks, "Starting marks", "edit");
     $("sName").value = ""; $("sMarks").value = "0";
     toast("Student added");
   };
@@ -776,12 +801,14 @@ function bootAdmin() {
           <div style="display:flex; gap:6px; align-items:center">
             <input type="number" value="${s.marks||0}" data-field="marks" style="width:72px"/>
             <input type="number" data-award placeholder="+pts" style="width:64px"/>
+            <input type="text" data-reason placeholder="reason" style="width:96px"/>
             <button class="btn" data-act="plus" title="Award points now (boss takes damage)" style="padding:8px 11px">+</button>
           </div>
         </td>
         <td>${s.uid ? `<span class="chip">${escapeHtml(s.email||"linked")}</span>` : `<span class="muted small">unclaimed</span>`}</td>
         <td style="text-align:right; white-space:nowrap">
           <button class="btn ghost" data-act="save">Save</button>
+          <button class="btn ghost" data-act="history">History</button>
           <button class="btn ghost" data-act="edit">Edit</button>
           <button class="btn ghost" data-act="addslot">Add slot</button>
           <button class="btn ghost" data-act="unlink" ${s.uid ? "" : "disabled"}>Unlink</button>
@@ -829,19 +856,21 @@ function bootAdmin() {
     if (sl) scopeBits.push(`slot ${sl}`);
     const scope = scopeBits.length ? scopeBits.join(", ") : "the current filter";
     if (!confirm(`${delta>0?"Add":"Subtract"} ${Math.abs(delta)} marks ${delta>0?"to":"from"} ${targets.length} student(s) in ${scope}?`)) return;
+    const reason = $("bulkReason").value.trim() || `Bulk update (${scope})`;
     $("bulkAddBtn").disabled = true;
     try {
-      const chunkSize = 400;
+      const chunkSize = 200;
       for (let i = 0; i < targets.length; i += chunkSize) {
         const batch = db.batch();
         for (const s of targets.slice(i, i + chunkSize)) {
           batch.update(db.collection("students").doc(s.id), {
             marks: (s.marks || 0) + delta
           });
+          batch.set(db.collection("awards").doc(), awardDoc(s, delta, reason, "bulk"));
         }
         await batch.commit();
       }
-      $("bulkPoints").value = "";
+      $("bulkPoints").value = ""; $("bulkReason").value = "";
       if (delta > 0) await damageBosses(delta * targets.length);
       toast(`Updated ${targets.length} student(s)`);
     } catch (e) {
@@ -857,13 +886,16 @@ function bootAdmin() {
     const act = btn.dataset.act;
     if (act === "plus") {
       const amtEl = tr.querySelector('input[data-award]');
+      const reasonEl = tr.querySelector('input[data-reason]');
       const amt = parseInt(amtEl.value, 10);
       if (!amt) return toast("Enter points to award");
       const s = allStudents.find(x => x.id === id);
+      const reason = reasonEl.value.trim() || (amt > 0 ? "Manual award" : "Manual deduction");
       btn.disabled = true;
       try {
         await db.collection("students").doc(id).update({ marks: (s?.marks || 0) + amt });
-        amtEl.value = "";
+        if (s) await logAward(s, amt, reason, "manual");
+        amtEl.value = ""; reasonEl.value = "";
         if (amt > 0) await damageBosses(amt);
         toast(`${amt > 0 ? "+" : ""}${amt} marks → ${s?.name || "student"}`);
       } catch (err) {
@@ -872,9 +904,15 @@ function bootAdmin() {
         btn.disabled = false;
       }
     } else if (act === "save") {
+      const s = allStudents.find(x => x.id === id);
       const marks = parseInt(tr.querySelector('input[data-field="marks"]').value, 10) || 0;
+      const delta = marks - (s?.marks || 0);
       await db.collection("students").doc(id).update({ marks });
+      if (s && delta) await logAward(s, delta, "Marks corrected by admin", "edit");
       toast("Saved");
+    } else if (act === "history") {
+      const s = allStudents.find(x => x.id === id);
+      if (s) openHistoryModal(s);
     } else if (act === "edit") {
       const s = allStudents.find(x => x.id === id);
       if (s) openEditStudentModal(s);
@@ -921,6 +959,8 @@ function bootAdmin() {
           name, level, slots, marks,
           slot: firebase.firestore.FieldValue.delete()
         });
+        const delta = marks - (s.marks || 0);
+        if (delta) await logAward(s, delta, "Marks corrected by admin", "edit");
         closeModal();
         toast("Student updated");
       } catch (e) {
@@ -928,6 +968,80 @@ function bootAdmin() {
         toast("Update failed: " + (e.message || e));
       }
     };
+  }
+
+  async function openHistoryModal(s) {
+    openModal(`
+      <h3 style="margin-top:0">Award history — ${escapeHtml(s.name)}</h3>
+      <p class="muted small">Current balance: <strong>${s.marks || 0}</strong> marks. Every change is recorded — use Undo to reverse a mistaken award.</p>
+      <div id="historyBody" class="muted small">Loading…</div>
+      <div class="row" style="justify-content:flex-end">
+        <button class="btn" id="closeHistory">Close</button>
+      </div>
+    `);
+    $("closeHistory").onclick = closeModal;
+    async function render() {
+      const body = $("historyBody");
+      if (!body) return;
+      body.textContent = "Loading…";
+      const docs = [];
+      try {
+        const snap = await db.collection("awards").where("studentId", "==", s.id).get();
+        snap.forEach(d => docs.push({ id: d.id, ...d.data() }));
+      } catch (e) {
+        body.textContent = "Could not load history: " + (e.message || e);
+        return;
+      }
+      docs.sort((a, b) => (b.createdAt?.toMillis?.() || Infinity) - (a.createdAt?.toMillis?.() || Infinity));
+      if (!docs.length) { body.textContent = "No recorded awards yet."; return; }
+      const logged = docs.filter(d => !d.undone).reduce((sum, d) => sum + (d.delta || 0), 0);
+      body.innerHTML = `
+        <div class="muted small" style="margin-bottom:8px">Logged total: <strong>${logged}</strong> marks across ${docs.length} entr${docs.length===1?"y":"ies"}.</div>
+        <div style="max-height:320px;overflow:auto">
+        <table class="table">
+          <thead><tr><th>When</th><th>Change</th><th>Reason</th><th>Source</th><th></th></tr></thead>
+          <tbody>
+          ${docs.map(d => {
+            const canUndo = !d.undone && d.source !== "undo";
+            return `<tr${d.undone ? ' style="opacity:.5"' : ''}>
+              <td class="small">${escapeHtml(fmtTime(d.createdAt) || "—")}</td>
+              <td><strong>${(d.delta||0) > 0 ? "+" : ""}${d.delta || 0}</strong></td>
+              <td class="small">${escapeHtml(d.reason || "")}${d.undone ? ' <span class="muted">(undone)</span>' : ''}<br><span class="muted">${escapeHtml(d.by || "")}</span></td>
+              <td class="small">${escapeHtml(d.source || "")}</td>
+              <td>${canUndo ? `<button class="btn ghost" data-undo="${d.id}" data-delta="${d.delta||0}">Undo</button>` : ""}</td>
+            </tr>`;
+          }).join("")}
+          </tbody>
+        </table></div>`;
+      body.querySelectorAll("button[data-undo]").forEach(b => {
+        b.onclick = async () => {
+          const awardId = b.dataset.undo;
+          const delta = parseInt(b.dataset.delta, 10) || 0;
+          if (!confirm(`Undo this ${delta > 0 ? "+" : ""}${delta} marks award? The student's balance will change by ${-delta}.`)) return;
+          b.disabled = true;
+          try {
+            const sRef = db.collection("students").doc(s.id);
+            await db.runTransaction(async (tx) => {
+              const snap = await tx.get(sRef);
+              if (!snap.exists) throw new Error("Student record missing");
+              tx.update(sRef, { marks: (snap.data().marks || 0) - delta });
+              tx.update(db.collection("awards").doc(awardId), {
+                undone: true,
+                undoneAt: firebase.firestore.FieldValue.serverTimestamp()
+              });
+              tx.set(db.collection("awards").doc(),
+                awardDoc({ id: s.id, name: s.name }, -delta, "Undo of an earlier award", "undo"));
+            });
+            toast("Award undone");
+            render();
+          } catch (e) {
+            b.disabled = false;
+            toast("Undo failed: " + (e.message || e));
+          }
+        };
+      });
+    }
+    render();
   }
 
   function openAddSlotModal(s) {
@@ -1434,11 +1548,13 @@ function bootAdmin() {
       const reward = boss.reward || 0;
       const targets = allStudents.slice();
       if (reward > 0 && targets.length) {
-        const chunkSize = 400;
+        const reason = `Boss "${boss.name}" defeated`;
+        const chunkSize = 200;
         for (let i = 0; i < targets.length; i += chunkSize) {
           const batch = db.batch();
           for (const s of targets.slice(i, i + chunkSize)) {
             batch.update(db.collection("students").doc(s.id), { marks: (s.marks || 0) + reward });
+            batch.set(db.collection("awards").doc(), awardDoc(s, reward, reason, "boss"));
           }
           await batch.commit();
         }
@@ -1802,6 +1918,9 @@ function wireTestPaperUpload() {
           marksAwarded: TEST_PAPER_AWARD,
           createdAt: firebase.firestore.FieldValue.serverTimestamp()
         });
+        tx.set(db.collection("awards").doc(),
+          awardDoc({ id: myStudent.id, name: s.name }, TEST_PAPER_AWARD,
+            `Test paper uploaded: ${file.name}`, "testpaper"));
       });
       try { await damageBosses(TEST_PAPER_AWARD); } catch { /* best effort */ }
       statusEl.textContent = "";
