@@ -224,6 +224,16 @@
               allow read, create: if request.auth != null;
               allow update, delete: if isAdmin();
             }
+            match /shopItems/{id} {
+              allow read: if request.auth != null;
+              allow write: if isAdmin();
+            }
+            match /purchases/{id} {
+              allow read: if isAdmin() ||
+                (request.auth != null && resource.data.uid == request.auth.uid);
+              allow create: if request.auth != null && request.resource.data.uid == request.auth.uid;
+              allow update, delete: if isAdmin();
+            }
           }
         }
 
@@ -282,6 +292,7 @@
         <button class="tab active" data-tab="adm-students">Students</button>
         <button class="tab" data-tab="adm-rewards">Rewards</button>
         <button class="tab" data-tab="adm-bosses">Bosses</button>
+        <button class="tab" data-tab="adm-shop">Item Shop <span class="pill" id="purchasesPill" style="margin-left:6px; display:none;">0</span></button>
         <button class="tab" data-tab="adm-claims">Pending shipments <span class="pill" id="pendingPill" style="margin-left:6px; display:none;">0</span></button>
         <button class="tab" data-tab="adm-papers">Test papers <span class="pill" id="papersPill" style="margin-left:6px; display:none;">0</span></button>
       </div>
@@ -367,6 +378,40 @@
           <h3 style="margin-top:0">All bosses</h3>
           <p class="muted small" style="margin-top:-6px">The boss loses health automatically — every point a student earns deals that much damage. When its HP hits 0, every student is rewarded.</p>
           <div class="grid" id="adminBosses"></div>
+        </div>
+      </div>
+
+      <!-- Item Shop tab -->
+      <div id="adm-shop" class="tab-pane hidden">
+        <div class="card">
+          <h3 style="margin-top:0">Add shop item</h3>
+          <p class="muted small" style="margin-top:-6px">Create an ability students can buy with their marks. Pick a template to pre-fill the details, then click the box and paste an image (Ctrl/Cmd+V).</p>
+          <div class="field">
+            <label>Start from an ability template (optional)</label>
+            <select id="shopPreset"><option value="">— blank item —</option></select>
+          </div>
+          <div class="paste-zone" id="shopPasteZone" tabindex="0">Click here and paste an image</div>
+          <div class="row" style="margin-top:12px">
+            <div class="grow field"><label>Item name</label><input id="iName" placeholder="e.g. Weekly Allowance" /></div>
+            <div class="field" style="width:190px"><label>Category</label><select id="iCategory"></select></div>
+            <div class="field" style="width:140px"><label>Cost (marks)</label><input id="iCost" type="number" value="20" /></div>
+          </div>
+          <div class="field"><label>Description</label><textarea id="iDesc" rows="2" placeholder="What does this ability do?"></textarea></div>
+          <button class="btn" id="addShopItemBtn">Add to shop</button>
+        </div>
+        <div class="card">
+          <h3 style="margin-top:0">All shop items</h3>
+          <div class="grid" id="adminShopItems"></div>
+        </div>
+        <div class="card">
+          <h3 style="margin-top:0">Ability purchases</h3>
+          <p class="muted small" style="margin-top:-6px">When a student buys an ability, fulfil it here — e.g. apply recurring marks with the bulk tool on the Students tab, then mark it granted.</p>
+          <div style="overflow-x:auto">
+            <table class="table" id="purchasesTable">
+              <thead><tr><th>When</th><th>Student</th><th>Ability</th><th>Category</th><th>Cost</th><th>Status</th><th></th></tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>
         </div>
       </div>
 
@@ -460,6 +505,20 @@
         <div class="grid" id="studentRewards"></div>
       </div>
       <div class="card">
+        <h3 style="margin-top:0">Ability Shop</h3>
+        <p class="muted small" style="margin-top:-6px">Spend your marks on abilities and perks. The teacher activates whatever you buy.</p>
+        <div id="studentShop"></div>
+      </div>
+      <div class="card">
+        <h3 style="margin-top:0">My abilities</h3>
+        <div style="overflow-x:auto">
+          <table class="table" id="myAbilities">
+            <thead><tr><th>When</th><th>Ability</th><th>Cost</th><th>Status</th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+      <div class="card">
         <h3 style="margin-top:0">My past claims</h3>
         <div style="overflow-x:auto">
           <table class="table" id="myClaims">
@@ -513,6 +572,24 @@ const BONUS_BEHAVIOURS = [
 ];
 const TEST_PAPER_AWARD = 10;
 const MAX_PDF_BYTES = 10 * 1024 * 1024; // 10 MB
+
+// Item shop: categories of buyable abilities, plus ready-made templates the
+// admin can pre-fill (they still paste their own image).
+const SHOP_CATEGORIES = ["Point Boosts", "Boss Buffs", "Class Perks", "Cosmetics", "Mystery"];
+const SHOP_PRESETS = [
+  { category: "Point Boosts", name: "Weekly Allowance", cost: 30, description: "Earn +2 bonus marks automatically every week." },
+  { category: "Point Boosts", name: "Instant Boost", cost: 12, description: "Get +10 marks added to your balance straight away." },
+  { category: "Point Boosts", name: "Double Paper", cost: 25, description: "Your next test paper upload is worth double the marks." },
+  { category: "Boss Buffs", name: "Critical Strike", cost: 20, description: "Your next marks earned deal triple damage to the boss." },
+  { category: "Boss Buffs", name: "Battle Cry", cost: 15, description: "Instantly deal 25 bonus damage to the current boss." },
+  { category: "Class Perks", name: "Homework Pass", cost: 40, description: "Skip one homework assignment, no questions asked." },
+  { category: "Class Perks", name: "Front Row Pick", cost: 18, description: "Choose your seat in class for a whole week." },
+  { category: "Class Perks", name: "Game Time", cost: 35, description: "Pick a 10-minute class game for everyone to play." },
+  { category: "Class Perks", name: "Music Break", cost: 15, description: "Choose a song to play during a class break." },
+  { category: "Cosmetics", name: "Golden Name", cost: 25, description: "Your name glows gold on the leaderboard for a week." },
+  { category: "Cosmetics", name: "Champion Badge", cost: 30, description: "Show off a special badge next to your name." },
+  { category: "Mystery", name: "Mystery Box", cost: 20, description: "A surprise reward picked by the teacher — it could be anything!" },
+];
 
 const PRIZE_TIERS = [
   { tier: "Gold",   medal: "🥇", amount: 300, cls: "gold" },
@@ -621,6 +698,7 @@ $("logoutBtn").addEventListener("click", () => auth.signOut());
 let currentUser = null;
 let myStudent = null;            // student doc {id,...} once linked
 let unsubStudents, unsubRewards, unsubClaims, unsubMyClaims, unsubMyStudent, unsubPapers, unsubMyPapers, unsubBranding, unsubPodium, unsubBosses;
+let unsubShopItems, unsubPurchases, unsubMyShop, unsubMyPurchases;
 let podiumTop = [];
 
 function applyLogo(dataUrl) {
@@ -643,8 +721,9 @@ function applyLogo(dataUrl) {
 
 auth.onAuthStateChanged(async (user) => {
   // Tear down any prior listeners
-  [unsubStudents, unsubRewards, unsubClaims, unsubMyClaims, unsubMyStudent, unsubPapers, unsubMyPapers, unsubBranding, unsubPodium, unsubBosses].forEach(fn => { try { fn && fn(); } catch{} });
+  [unsubStudents, unsubRewards, unsubClaims, unsubMyClaims, unsubMyStudent, unsubPapers, unsubMyPapers, unsubBranding, unsubPodium, unsubBosses, unsubShopItems, unsubPurchases, unsubMyShop, unsubMyPurchases].forEach(fn => { try { fn && fn(); } catch{} });
   unsubStudents = unsubRewards = unsubClaims = unsubMyClaims = unsubMyStudent = unsubPapers = unsubMyPapers = unsubBranding = unsubPodium = unsubBosses = null;
+  unsubShopItems = unsubPurchases = unsubMyShop = unsubMyPurchases = null;
   myStudent = null;
   podiumTop = [];
   hide($("prizePodium"));
@@ -688,6 +767,7 @@ auth.onAuthStateChanged(async (user) => {
   if (isAdmin) {
     show($("adminView")); hide($("setupView")); hide($("studentView"));
     bootAdmin();
+    bootShopAdmin();
   } else {
     hide($("adminView"));
     bootStudent();
@@ -1345,8 +1425,53 @@ function bootAdmin() {
     } else if (btn.dataset.act === "reopen") {
       await db.collection("claims").doc(id).update({ status: "pending" });
     } else if (btn.dataset.act === "del") {
-      if (!confirm("Delete this claim record?")) return;
-      await db.collection("claims").doc(id).delete();
+      const cSnap = await db.collection("claims").doc(id).get();
+      if (!cSnap.exists) return;
+      const c = cSnap.data();
+      const refundAmt = Number(c.marksSpent) || 0;
+      const canRefund = refundAmt > 0 && !!c.studentId;
+      openModal(`
+        <h3 style="margin-top:0">Delete claim</h3>
+        <p class="muted small">${escapeHtml(c.studentName||"Student")} — ${escapeHtml(c.rewardName||"reward")} (${refundAmt} marks).${canRefund ? " Refunding returns the spent marks to the student and records it in their award history." : ""}</p>
+        <div class="row" style="justify-content:flex-end">
+          <button class="btn ghost" id="cancelDelClaim">Cancel</button>
+          <button class="btn ghost" id="delClaimOnly">Delete only</button>
+          ${canRefund ? `<button class="btn" id="delClaimRefund">Refund &amp; delete</button>` : ""}
+        </div>
+      `);
+      $("cancelDelClaim").onclick = closeModal;
+      $("delClaimOnly").onclick = async () => {
+        try {
+          await db.collection("claims").doc(id).delete();
+          closeModal();
+          toast("Claim deleted");
+        } catch (err) {
+          toast("Could not delete claim: " + (err.message || err));
+        }
+      };
+      if (canRefund) $("delClaimRefund").onclick = async () => {
+        $("delClaimRefund").disabled = true;
+        try {
+          await db.runTransaction(async (tx) => {
+            const cRef = db.collection("claims").doc(id);
+            const sRef = db.collection("students").doc(c.studentId);
+            const [cs, ss] = await Promise.all([tx.get(cRef), tx.get(sRef)]);
+            if (!cs.exists) return;
+            if (ss.exists) {
+              tx.update(sRef, { marks: (ss.data().marks || 0) + refundAmt });
+              tx.set(db.collection("awards").doc(),
+                awardDoc({ id: c.studentId, name: c.studentName }, refundAmt,
+                  `Refund — claim deleted: ${c.rewardName}`, "redemption"));
+            }
+            tx.delete(cRef);
+          });
+          closeModal();
+          toast(`Claim deleted, ${refundAmt} marks refunded`);
+        } catch (err) {
+          $("delClaimRefund").disabled = false;
+          toast("Refund failed: " + (err.message || err));
+        }
+      };
     }
   });
 
@@ -1641,6 +1766,242 @@ function bootAdmin() {
   }
 }
 
+// ---------- ITEM SHOP (admin) ----------
+function bootShopAdmin() {
+  $("iCategory").innerHTML = SHOP_CATEGORIES.map(c => `<option>${escapeHtml(c)}</option>`).join("");
+  $("shopPreset").innerHTML = `<option value="">— blank item —</option>` +
+    SHOP_PRESETS.map((p, i) => `<option value="${i}">${escapeHtml(p.category)} — ${escapeHtml(p.name)} (${p.cost})</option>`).join("");
+  $("shopPreset").onchange = () => {
+    const p = SHOP_PRESETS[parseInt($("shopPreset").value, 10)];
+    if (!p) return;
+    $("iName").value = p.name;
+    $("iDesc").value = p.description;
+    $("iCost").value = p.cost;
+    $("iCategory").value = p.category;
+  };
+
+  const zone = $("shopPasteZone");
+  let shopDataUrl = null;
+  const setImg = (url) => {
+    shopDataUrl = url;
+    zone.classList.add("has");
+    zone.innerHTML = `<img src="${url}" alt="item preview" />`;
+  };
+  zone.addEventListener("click", () => zone.focus());
+  zone.addEventListener("paste", async (e) => {
+    for (const it of (e.clipboardData?.items || [])) {
+      if (it.type && it.type.startsWith("image/")) {
+        setImg(await compressImage(it.getAsFile(), 900, 0.82));
+        return;
+      }
+    }
+    toast("No image in clipboard");
+  });
+  zone.addEventListener("dragover", e => e.preventDefault());
+  zone.addEventListener("drop", async (e) => {
+    e.preventDefault();
+    const f = e.dataTransfer?.files?.[0];
+    if (f && f.type.startsWith("image/")) setImg(await compressImage(f, 900, 0.82));
+  });
+
+  $("addShopItemBtn").onclick = async () => {
+    const name = $("iName").value.trim();
+    const description = $("iDesc").value.trim();
+    const category = $("iCategory").value;
+    const cost = parseInt($("iCost").value, 10) || 0;
+    if (!name) return toast("Item name required");
+    if (cost <= 0) return toast("Cost must be greater than 0");
+    if (!shopDataUrl) return toast("Paste an image first");
+    if (shopDataUrl.length > 900_000) return toast("Image too large, try a smaller one");
+    try {
+      await db.collection("shopItems").add({
+        name, description, category, cost, image: shopDataUrl, active: true,
+        createdAt: firebase.firestore.FieldValue.serverTimestamp()
+      });
+      $("iName").value = ""; $("iDesc").value = ""; $("iCost").value = "20";
+      $("shopPreset").value = "";
+      shopDataUrl = null;
+      zone.classList.remove("has");
+      zone.innerHTML = "Click here and paste an image";
+      toast("Shop item added");
+    } catch (e) {
+      toast("Could not add item: " + (e.message || e));
+    }
+  };
+
+  unsubShopItems = db.collection("shopItems").orderBy("createdAt", "desc").onSnapshot(snap => {
+    const cards = [];
+    snap.forEach(doc => {
+      const it = { id: doc.id, ...doc.data() };
+      cards.push(`
+        <div class="reward-card" data-id="${it.id}">
+          <img src="${it.image}" alt="" />
+          <div class="body">
+            <div class="title">${escapeHtml(it.name)}</div>
+            <div class="muted small">${escapeHtml(it.category||"")} · ${it.cost} marks</div>
+            ${it.description ? `<div class="muted small">${escapeHtml(it.description)}</div>` : ""}
+          </div>
+          <div class="foot">
+            <span class="chip">${it.active ? "Active" : "Hidden"}</span>
+            <span>
+              <button class="btn ghost" data-act="toggle">${it.active ? "Hide" : "Show"}</button>
+              <button class="btn ghost" data-act="del">Delete</button>
+            </span>
+          </div>
+        </div>`);
+    });
+    $("adminShopItems").innerHTML = cards.join("") || `<div class="muted">No shop items yet</div>`;
+  });
+  $("adminShopItems").addEventListener("click", async (e) => {
+    const btn = e.target.closest("button"); if (!btn) return;
+    const id = e.target.closest(".reward-card")?.dataset.id; if (!id) return;
+    if (btn.dataset.act === "del") {
+      if (!confirm("Delete this shop item?")) return;
+      await db.collection("shopItems").doc(id).delete();
+      toast("Deleted");
+    } else if (btn.dataset.act === "toggle") {
+      const doc = await db.collection("shopItems").doc(id).get();
+      await db.collection("shopItems").doc(id).update({ active: !doc.data().active });
+    }
+  });
+
+  unsubPurchases = db.collection("purchases").orderBy("createdAt", "desc").onSnapshot(snap => {
+    const rows = []; let pending = 0;
+    snap.forEach(doc => {
+      const p = { id: doc.id, ...doc.data() };
+      if (p.status === "pending") pending++;
+      rows.push(`
+        <tr data-id="${p.id}">
+          <td class="small">${fmtTime(p.createdAt)}</td>
+          <td>${escapeHtml(p.studentName||"")}<div class="muted small">${escapeHtml(p.studentClass||"")}</div></td>
+          <td>${escapeHtml(p.itemName||"")}</td>
+          <td class="small">${escapeHtml(p.category||"")}</td>
+          <td>${p.cost||0}</td>
+          <td><span class="chip">${escapeHtml(p.status||"")}</span></td>
+          <td style="text-align:right; white-space:nowrap">
+            ${p.status === "pending"
+              ? `<button class="btn" data-act="grant">Mark granted</button>`
+              : `<button class="btn ghost" data-act="reopen">Reopen</button>`}
+            <button class="btn ghost" data-act="del">Remove</button>
+          </td>
+        </tr>`);
+    });
+    $("purchasesTable").querySelector("tbody").innerHTML = rows.join("") || `<tr><td colspan="7" class="center muted">No purchases yet</td></tr>`;
+    const pill = $("purchasesPill");
+    if (pending > 0) { pill.style.display = "inline-block"; pill.textContent = pending; }
+    else pill.style.display = "none";
+  });
+  $("purchasesTable").addEventListener("click", async (e) => {
+    const btn = e.target.closest("button"); if (!btn) return;
+    const id = e.target.closest("tr")?.dataset.id; if (!id) return;
+    const act = btn.dataset.act;
+    if (act === "grant") {
+      await db.collection("purchases").doc(id).update({ status: "granted", grantedAt: firebase.firestore.FieldValue.serverTimestamp() });
+      toast("Marked granted");
+    } else if (act === "reopen") {
+      await db.collection("purchases").doc(id).update({ status: "pending" });
+    } else if (act === "del") {
+      const pSnap = await db.collection("purchases").doc(id).get();
+      if (!pSnap.exists) return;
+      const p = pSnap.data();
+      const refundAmt = Number(p.cost) || 0;
+      const canRefund = refundAmt > 0 && !!p.studentId;
+      openModal(`
+        <h3 style="margin-top:0">Remove purchase</h3>
+        <p class="muted small">${escapeHtml(p.studentName||"Student")} — ${escapeHtml(p.itemName||"ability")} (${refundAmt} marks).${canRefund ? " Refunding returns the spent marks and records it in the student's award history." : ""}</p>
+        <div class="row" style="justify-content:flex-end">
+          <button class="btn ghost" id="cancelDelPur">Cancel</button>
+          <button class="btn ghost" id="delPurOnly">Remove only</button>
+          ${canRefund ? `<button class="btn" id="delPurRefund">Refund &amp; remove</button>` : ""}
+        </div>
+      `);
+      $("cancelDelPur").onclick = closeModal;
+      $("delPurOnly").onclick = async () => {
+        try {
+          await db.collection("purchases").doc(id).delete();
+          closeModal();
+          toast("Purchase removed");
+        } catch (err) {
+          toast("Could not remove: " + (err.message || err));
+        }
+      };
+      if (canRefund) $("delPurRefund").onclick = async () => {
+        $("delPurRefund").disabled = true;
+        try {
+          await db.runTransaction(async (tx) => {
+            const purRef = db.collection("purchases").doc(id);
+            const sRef = db.collection("students").doc(p.studentId);
+            const [ps, ss] = await Promise.all([tx.get(purRef), tx.get(sRef)]);
+            if (!ps.exists) return;
+            if (ss.exists) {
+              tx.update(sRef, { marks: (ss.data().marks || 0) + refundAmt });
+              tx.set(db.collection("awards").doc(),
+                awardDoc({ id: p.studentId, name: p.studentName }, refundAmt,
+                  `Refund — purchase removed: ${p.itemName}`, "shop"));
+            }
+            tx.delete(purRef);
+          });
+          closeModal();
+          toast(`Purchase removed, ${refundAmt} marks refunded`);
+        } catch (err) {
+          $("delPurRefund").disabled = false;
+          toast("Refund failed: " + (err.message || err));
+        }
+      };
+    }
+  });
+}
+
+function openBuyModal(item) {
+  if (!item) return;
+  openModal(`
+    <h3 style="margin-top:0">Buy: ${escapeHtml(item.name)}</h3>
+    <p class="muted small">${escapeHtml(item.category||"")} ability — costs ${item.cost} marks. Your balance: ${myStudent.marks||0}.</p>
+    ${item.description ? `<p class="small">${escapeHtml(item.description)}</p>` : ""}
+    <p class="muted small">Once bought, the teacher will activate this ability for you.</p>
+    <div class="row" style="justify-content:flex-end">
+      <button class="btn ghost" id="cancelBuy">Cancel</button>
+      <button class="btn" id="confirmBuy">Confirm purchase</button>
+    </div>
+  `);
+  $("cancelBuy").onclick = closeModal;
+  $("confirmBuy").onclick = async () => {
+    $("confirmBuy").disabled = true;
+    try {
+      await db.runTransaction(async (tx) => {
+        const sRef = db.collection("students").doc(myStudent.id);
+        const iRef = db.collection("shopItems").doc(item.id);
+        const [sSnap, iSnap] = await Promise.all([tx.get(sRef), tx.get(iRef)]);
+        if (!sSnap.exists || !iSnap.exists) throw new Error("Missing record");
+        const s = sSnap.data(); const it = iSnap.data();
+        if (it.active === false) throw new Error("This item is no longer available");
+        if ((s.marks || 0) < it.cost) throw new Error("Not enough marks");
+        tx.update(sRef, { marks: (s.marks || 0) - it.cost });
+        tx.set(db.collection("awards").doc(),
+          awardDoc({ id: myStudent.id, name: s.name }, -(it.cost || 0),
+            `Bought ability: ${it.name}`, "shop"));
+        tx.set(db.collection("purchases").doc(), {
+          uid: currentUser.uid,
+          studentId: myStudent.id,
+          studentName: s.name,
+          studentClass: `${s.level} · ${studentSlots(s).join(", ")}`,
+          itemId: item.id,
+          itemName: it.name,
+          category: it.category || "",
+          cost: it.cost || 0,
+          status: "pending",
+          createdAt: firebase.firestore.FieldValue.serverTimestamp()
+        });
+      });
+      closeModal();
+      toast("Ability purchased!");
+    } catch (e) {
+      $("confirmBuy").disabled = false;
+      toast(e.message || "Could not complete purchase");
+    }
+  };
+}
+
 // ---------- STUDENT ----------
 async function bootStudent() {
   // Find this user's linked student record (if any)
@@ -1730,6 +2091,7 @@ function showStudentMain() {
     myStudent = { id: doc.id, ...doc.data() };
     $("balanceNum").textContent = myStudent.marks || 0;
     renderStudentRewards(currentRewards);
+    renderStudentShop();
   });
 
   unsubRewards = db.collection("rewards").orderBy("marksRequired").onSnapshot(snap => {
@@ -1750,6 +2112,62 @@ function showStudentMain() {
         <td>${c.marksSpent}</td>
         <td><span class="chip">${c.status}</span></td>
       </tr>`).join("") || `<tr><td colspan="4" class="center muted">Nothing yet</td></tr>`;
+  });
+
+  // Item shop
+  let currentShopItems = [];
+  function renderStudentShop() {
+    const balance = myStudent?.marks || 0;
+    const active = currentShopItems.filter(it => it.active !== false);
+    if (!active.length) {
+      $("studentShop").innerHTML = `<div class="muted">No abilities available yet</div>`;
+      return;
+    }
+    const byCat = {};
+    active.forEach(it => { (byCat[it.category || "Other"] ||= []).push(it); });
+    const order = [...SHOP_CATEGORIES, "Other"];
+    $("studentShop").innerHTML = order.filter(c => byCat[c]).map(cat => {
+      const cards = byCat[cat].map(it => {
+        const affordable = balance >= it.cost;
+        return `
+          <div class="reward-card">
+            <img src="${it.image}" alt="" />
+            <div class="body">
+              <div class="title">${escapeHtml(it.name)}</div>
+              <div class="muted small">${it.cost} marks</div>
+              ${it.description ? `<div class="muted small">${escapeHtml(it.description)}</div>` : ""}
+            </div>
+            <div class="foot">
+              ${affordable
+                ? `<button class="btn" data-buy="${it.id}">Buy</button>`
+                : `<span class="muted small">Need more marks</span>`}
+            </div>
+          </div>`;
+      }).join("");
+      return `<div><div class="muted small" style="font-weight:700;margin:10px 0 6px">${escapeHtml(cat)}</div><div class="grid">${cards}</div></div>`;
+    }).join("");
+    $("studentShop").querySelectorAll("[data-buy]").forEach(btn => {
+      btn.onclick = () => openBuyModal(currentShopItems.find(it => it.id === btn.dataset.buy));
+    });
+  }
+
+  unsubMyShop = db.collection("shopItems").orderBy("createdAt", "desc").onSnapshot(snap => {
+    currentShopItems = [];
+    snap.forEach(d => currentShopItems.push({ id: d.id, ...d.data() }));
+    renderStudentShop();
+  });
+
+  unsubMyPurchases = db.collection("purchases").where("uid", "==", currentUser.uid).onSnapshot(snap => {
+    const items = [];
+    snap.forEach(d => items.push({ id: d.id, ...d.data() }));
+    items.sort((a,b) => (b.createdAt?.toMillis?.()||0) - (a.createdAt?.toMillis?.()||0));
+    $("myAbilities").querySelector("tbody").innerHTML = items.map(p => `
+      <tr>
+        <td class="small">${fmtTime(p.createdAt)}</td>
+        <td>${escapeHtml(p.itemName||"")}<div class="muted small">${escapeHtml(p.category||"")}</div></td>
+        <td>${p.cost||0}</td>
+        <td><span class="chip">${escapeHtml(p.status||"")}</span></td>
+      </tr>`).join("") || `<tr><td colspan="4" class="center muted">No abilities yet</td></tr>`;
   });
 
   // Boss battle (shown to all students)
@@ -1848,6 +2266,9 @@ function openClaimModal(reward) {
         if (r.stock != null && r.stock <= 0) throw new Error("Out of stock");
         tx.update(sRef, { marks: (s.marks || 0) - r.marksRequired });
         if (r.stock != null) tx.update(rRef, { stock: r.stock - 1 });
+        tx.set(db.collection("awards").doc(),
+          awardDoc({ id: myStudent.id, name: s.name }, -(r.marksRequired || 0),
+            `Redeemed reward: ${r.name}`, "redemption"));
         const cRef = db.collection("claims").doc();
         tx.set(cRef, {
           uid: currentUser.uid,
