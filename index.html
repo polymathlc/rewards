@@ -1337,6 +1337,7 @@ function bootAdmin() {
           <div class="foot">
             <span class="chip">${b.active === false ? "Hidden" : "Active"}</span>
             <span>
+              <button class="btn ghost" data-act="edit">Edit</button>
               <button class="btn ghost" data-act="toggle">${b.active === false ? "Show" : "Hide"}</button>
               <button class="btn ghost" data-act="del">Delete</button>
             </span>
@@ -1403,8 +1404,58 @@ function bootAdmin() {
     } else if (act === "toggle") {
       const doc = await db.collection("bosses").doc(id).get();
       await db.collection("bosses").doc(id).update({ active: doc.data().active === false });
+    } else if (act === "edit") {
+      const doc = await db.collection("bosses").doc(id).get();
+      if (doc.exists) openEditBossModal({ id: doc.id, ...doc.data() });
     }
   });
+
+  function openEditBossModal(b) {
+    const max = b.maxHp || b.hp || 1;
+    const hp = b.hp || 0;
+    openModal(`
+      <h3 style="margin-top:0">Edit boss</h3>
+      <div class="field"><label>Boss name</label><input id="ebName" value="${escapeHtml(b.name||"")}" /></div>
+      <div class="field"><label>Description</label><textarea id="ebDesc" rows="3">${escapeHtml(b.description||"")}</textarea></div>
+      <div class="row">
+        <div class="grow field"><label>Current HP</label><input id="ebHp" type="number" value="${hp}" /></div>
+        <div class="grow field"><label>Max HP</label><input id="ebMaxHp" type="number" value="${max}" /></div>
+        <div class="grow field"><label>Reward (marks each)</label><input id="ebReward" type="number" value="${b.reward||0}" /></div>
+      </div>
+      <p class="muted small">Setting current HP above 0 revives a defeated boss and lets it pay out again when next slain.</p>
+      <div class="row" style="justify-content:flex-end">
+        <button class="btn ghost" id="cancelEditBoss">Cancel</button>
+        <button class="btn" id="saveEditBoss">Save changes</button>
+      </div>
+    `);
+    $("cancelEditBoss").onclick = closeModal;
+    $("saveEditBoss").onclick = async () => {
+      const name = $("ebName").value.trim();
+      const description = $("ebDesc").value.trim();
+      const newHp = Math.max(0, parseInt($("ebHp").value, 10) || 0);
+      const newMax = Math.max(1, parseInt($("ebMaxHp").value, 10) || 1);
+      const reward = parseInt($("ebReward").value, 10) || 0;
+      if (!name) return toast("Boss name required");
+      const upd = { name, description, hp: newHp, maxHp: newMax, reward };
+      if (newHp > 0) {
+        upd.defeated = false;
+        upd.defeatedAt = firebase.firestore.FieldValue.delete();
+        upd.rewardPaid = false;
+        upd.rewardPaidAt = firebase.firestore.FieldValue.delete();
+      } else {
+        upd.defeated = true;
+      }
+      $("saveEditBoss").disabled = true;
+      try {
+        await db.collection("bosses").doc(b.id).update(upd);
+        closeModal();
+        toast("Boss updated");
+      } catch (e) {
+        $("saveEditBoss").disabled = false;
+        toast("Update failed: " + (e.message || e));
+      }
+    };
+  }
 }
 
 // ---------- STUDENT ----------
