@@ -1345,8 +1345,53 @@ function bootAdmin() {
     } else if (btn.dataset.act === "reopen") {
       await db.collection("claims").doc(id).update({ status: "pending" });
     } else if (btn.dataset.act === "del") {
-      if (!confirm("Delete this claim record?")) return;
-      await db.collection("claims").doc(id).delete();
+      const cSnap = await db.collection("claims").doc(id).get();
+      if (!cSnap.exists) return;
+      const c = cSnap.data();
+      const refundAmt = Number(c.marksSpent) || 0;
+      const canRefund = refundAmt > 0 && !!c.studentId;
+      openModal(`
+        <h3 style="margin-top:0">Delete claim</h3>
+        <p class="muted small">${escapeHtml(c.studentName||"Student")} — ${escapeHtml(c.rewardName||"reward")} (${refundAmt} marks).${canRefund ? " Refunding returns the spent marks to the student and records it in their award history." : ""}</p>
+        <div class="row" style="justify-content:flex-end">
+          <button class="btn ghost" id="cancelDelClaim">Cancel</button>
+          <button class="btn ghost" id="delClaimOnly">Delete only</button>
+          ${canRefund ? `<button class="btn" id="delClaimRefund">Refund &amp; delete</button>` : ""}
+        </div>
+      `);
+      $("cancelDelClaim").onclick = closeModal;
+      $("delClaimOnly").onclick = async () => {
+        try {
+          await db.collection("claims").doc(id).delete();
+          closeModal();
+          toast("Claim deleted");
+        } catch (err) {
+          toast("Could not delete claim: " + (err.message || err));
+        }
+      };
+      if (canRefund) $("delClaimRefund").onclick = async () => {
+        $("delClaimRefund").disabled = true;
+        try {
+          await db.runTransaction(async (tx) => {
+            const cRef = db.collection("claims").doc(id);
+            const sRef = db.collection("students").doc(c.studentId);
+            const [cs, ss] = await Promise.all([tx.get(cRef), tx.get(sRef)]);
+            if (!cs.exists) return;
+            if (ss.exists) {
+              tx.update(sRef, { marks: (ss.data().marks || 0) + refundAmt });
+              tx.set(db.collection("awards").doc(),
+                awardDoc({ id: c.studentId, name: c.studentName }, refundAmt,
+                  `Refund — claim deleted: ${c.rewardName}`, "redemption"));
+            }
+            tx.delete(cRef);
+          });
+          closeModal();
+          toast(`Claim deleted, ${refundAmt} marks refunded`);
+        } catch (err) {
+          $("delClaimRefund").disabled = false;
+          toast("Refund failed: " + (err.message || err));
+        }
+      };
     }
   });
 
@@ -1848,6 +1893,9 @@ function openClaimModal(reward) {
         if (r.stock != null && r.stock <= 0) throw new Error("Out of stock");
         tx.update(sRef, { marks: (s.marks || 0) - r.marksRequired });
         if (r.stock != null) tx.update(rRef, { stock: r.stock - 1 });
+        tx.set(db.collection("awards").doc(),
+          awardDoc({ id: myStudent.id, name: s.name }, -(r.marksRequired || 0),
+            `Redeemed reward: ${r.name}`, "redemption"));
         const cRef = db.collection("claims").doc();
         tx.set(cRef, {
           uid: currentUser.uid,
