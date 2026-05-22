@@ -475,6 +475,17 @@
             <div class="balance-big" id="balanceNum">0</div>
           </div>
         </div>
+        <div id="rankBox" style="margin-top:10px; padding-top:10px; border-top:1px solid var(--line)">
+          <div class="row" style="align-items:center">
+            <div class="grow">
+              <span style="font-size:22px" id="rankIcon"></span>
+              <strong id="rankName">—</strong>
+              <span class="muted small" id="rankEarned"></span>
+            </div>
+            <div class="muted small" id="rankNext"></div>
+          </div>
+          <div class="hpbar" style="margin-top:6px"><div id="rankBar" style="width:0%"></div></div>
+        </div>
       </div>
       <div class="card">
         <h3 style="margin-top:0">My marks history</h3>
@@ -582,6 +593,36 @@ const BONUS_BEHAVIOURS = [
 ];
 const TEST_PAPER_AWARD = 10;
 const MAX_PDF_BYTES = 10 * 1024 * 1024; // 10 MB
+
+// Lifetime rank — driven by total marks earned (not spendable balance), so
+// buying things in the shop never lowers a student's standing.
+const RANKS = [
+  { name: "Novice",     min: 0,    icon: "🌱" },
+  { name: "Apprentice", min: 100,  icon: "📘" },
+  { name: "Scholar",    min: 300,  icon: "🎓" },
+  { name: "Expert",     min: 600,  icon: "⭐" },
+  { name: "Master",     min: 1000, icon: "👑" },
+];
+function rankFor(earned) {
+  let r = RANKS[0];
+  for (const t of RANKS) if (earned >= t.min) r = t;
+  return r;
+}
+function renderRank(earned) {
+  const r = rankFor(earned);
+  const next = RANKS[RANKS.indexOf(r) + 1] || null;
+  $("rankIcon").textContent = r.icon;
+  $("rankName").textContent = `${r.name} rank`;
+  $("rankEarned").textContent = ` · ${earned} marks earned all-time`;
+  if (next) {
+    const pct = Math.round((earned - r.min) / (next.min - r.min) * 100);
+    $("rankBar").style.width = `${Math.max(0, Math.min(100, pct))}%`;
+    $("rankNext").textContent = `${next.min - earned} to ${next.icon} ${next.name}`;
+  } else {
+    $("rankBar").style.width = "100%";
+    $("rankNext").textContent = "Top rank reached!";
+  }
+}
 
 // Item shop: categories of buyable abilities, plus ready-made templates the
 // admin can pre-fill (they still paste their own image).
@@ -2129,6 +2170,9 @@ function showStudentMain() {
     const items = [];
     snap.forEach(d => items.push({ id: d.id, ...d.data() }));
     items.sort((a, b) => (b.createdAt?.toMillis?.() || Infinity) - (a.createdAt?.toMillis?.() || Infinity));
+    const earned = items.reduce((sum, a) =>
+      sum + (!a.undone && (a.delta || 0) > 0 ? a.delta : 0), 0);
+    renderRank(earned);
     $("myHistory").querySelector("tbody").innerHTML = items.map(a => {
       const delta = a.delta || 0;
       return `<tr${a.undone ? ' style="opacity:.5"' : ''}>
