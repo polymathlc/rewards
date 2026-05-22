@@ -477,6 +477,16 @@
         </div>
       </div>
       <div class="card">
+        <h3 style="margin-top:0">My marks history</h3>
+        <p class="muted small" style="margin-top:-6px">Every change to your marks — what you earned and what you spent.</p>
+        <div style="overflow-x:auto">
+          <table class="table" id="myHistory">
+            <thead><tr><th>When</th><th>Change</th><th>Reason</th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+      <div class="card">
         <h3 style="margin-top:0">Upload a test paper for +10 marks</h3>
         <p class="muted small" style="margin-top:-6px">Upload your completed test paper as a PDF. You'll be awarded <strong>+10 marks</strong> as soon as it's uploaded. The teacher will be able to view it.</p>
         <div class="field">
@@ -698,7 +708,7 @@ $("logoutBtn").addEventListener("click", () => auth.signOut());
 let currentUser = null;
 let myStudent = null;            // student doc {id,...} once linked
 let unsubStudents, unsubRewards, unsubClaims, unsubMyClaims, unsubMyStudent, unsubPapers, unsubMyPapers, unsubBranding, unsubPodium, unsubBosses;
-let unsubShopItems, unsubPurchases, unsubMyShop, unsubMyPurchases;
+let unsubShopItems, unsubPurchases, unsubMyShop, unsubMyPurchases, unsubMyHistory;
 let podiumTop = [];
 
 function applyLogo(dataUrl) {
@@ -721,9 +731,9 @@ function applyLogo(dataUrl) {
 
 auth.onAuthStateChanged(async (user) => {
   // Tear down any prior listeners
-  [unsubStudents, unsubRewards, unsubClaims, unsubMyClaims, unsubMyStudent, unsubPapers, unsubMyPapers, unsubBranding, unsubPodium, unsubBosses, unsubShopItems, unsubPurchases, unsubMyShop, unsubMyPurchases].forEach(fn => { try { fn && fn(); } catch{} });
+  [unsubStudents, unsubRewards, unsubClaims, unsubMyClaims, unsubMyStudent, unsubPapers, unsubMyPapers, unsubBranding, unsubPodium, unsubBosses, unsubShopItems, unsubPurchases, unsubMyShop, unsubMyPurchases, unsubMyHistory].forEach(fn => { try { fn && fn(); } catch{} });
   unsubStudents = unsubRewards = unsubClaims = unsubMyClaims = unsubMyStudent = unsubPapers = unsubMyPapers = unsubBranding = unsubPodium = unsubBosses = null;
-  unsubShopItems = unsubPurchases = unsubMyShop = unsubMyPurchases = null;
+  unsubShopItems = unsubPurchases = unsubMyShop = unsubMyPurchases = unsubMyHistory = null;
   myStudent = null;
   podiumTop = [];
   hide($("prizePodium"));
@@ -2112,6 +2122,21 @@ function showStudentMain() {
         <td>${c.marksSpent}</td>
         <td><span class="chip">${c.status}</span></td>
       </tr>`).join("") || `<tr><td colspan="4" class="center muted">Nothing yet</td></tr>`;
+  });
+
+  // My marks history
+  unsubMyHistory = db.collection("awards").where("studentId", "==", myStudent.id).onSnapshot(snap => {
+    const items = [];
+    snap.forEach(d => items.push({ id: d.id, ...d.data() }));
+    items.sort((a, b) => (b.createdAt?.toMillis?.() || Infinity) - (a.createdAt?.toMillis?.() || Infinity));
+    $("myHistory").querySelector("tbody").innerHTML = items.map(a => {
+      const delta = a.delta || 0;
+      return `<tr${a.undone ? ' style="opacity:.5"' : ''}>
+        <td class="small">${escapeHtml(fmtTime(a.createdAt) || "—")}</td>
+        <td><strong>${delta > 0 ? "+" : ""}${delta}</strong></td>
+        <td class="small">${escapeHtml(a.reason || "")}${a.undone ? ' <span class="muted">(cancelled)</span>' : ''}</td>
+      </tr>`;
+    }).join("") || `<tr><td colspan="3" class="center muted">No marks history yet</td></tr>`;
   });
 
   // Item shop
