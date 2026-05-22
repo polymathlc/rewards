@@ -310,6 +310,7 @@
             <div style="width:120px"><input id="bulkPoints" type="number" placeholder="Points" /></div>
             <button class="btn" id="bulkAddBtn">Add points to filtered</button>
             <button class="btn ghost" id="renameSlotBtn">Rename slot…</button>
+            <button class="btn ghost" id="migrateLevelsBtn">Migrate levels/slots…</button>
           </div>
           <div style="overflow-x:auto">
             <table class="table" id="studentsTable">
@@ -1001,6 +1002,61 @@ function bootAdmin() {
       } catch (e) {
         $("confirmRename").disabled = false;
         toast("Rename failed: " + (e.message || e));
+      }
+    };
+  };
+
+  // One-time migration: a level like "P6 Science" becomes level "P6", and the
+  // subject is moved into each slot prefix ("Tuesday 7pm" → "Science - Tuesday 7pm").
+  function splitLevel(level) {
+    const m = (level || "").trim().match(/^(\S+)\s+(.+)$/);
+    return m ? { code: m[1], subject: m[2].trim() } : null;
+  }
+
+  $("migrateLevelsBtn").onclick = () => {
+    const targets = allStudents.filter(s => splitLevel(s.level));
+    if (!targets.length) return toast("No students need migrating");
+    const preview = targets.slice(0, 8).map(s => {
+      const { code, subject } = splitLevel(s.level);
+      const newSlots = studentSlots(s).map(x =>
+        x.trim().startsWith(subject + " - ") ? x.trim() : `${subject} - ${x.trim()}`);
+      return `<li>${escapeHtml(s.name)}: <code>${escapeHtml(s.level)}</code> → level <code>${escapeHtml(code)}</code>, slots <code>${escapeHtml(newSlots.join(", ") || "—")}</code></li>`;
+    }).join("");
+    openModal(`
+      <h3 style="margin-top:0">Migrate levels &amp; slots</h3>
+      <p class="muted small">Levels that include a subject (e.g. <code>P6 Science</code>) will be shortened to just the level (<code>P6</code>), and the subject moves into each time slot (<code>Tuesday 7pm</code> → <code>Science - Tuesday 7pm</code>). ${targets.length} student(s) will be updated.</p>
+      <ul class="muted small" style="max-height:200px;overflow:auto">${preview}${targets.length > 8 ? `<li>… and ${targets.length - 8} more</li>` : ""}</ul>
+      <div class="row" style="justify-content:flex-end">
+        <button class="btn ghost" id="cancelMigrate">Cancel</button>
+        <button class="btn" id="confirmMigrate">Migrate ${targets.length} student(s)</button>
+      </div>
+    `);
+    $("cancelMigrate").onclick = closeModal;
+    $("confirmMigrate").onclick = async () => {
+      $("confirmMigrate").disabled = true;
+      try {
+        const chunkSize = 400;
+        for (let i = 0; i < targets.length; i += chunkSize) {
+          const batch = db.batch();
+          for (const s of targets.slice(i, i + chunkSize)) {
+            const { code, subject } = splitLevel(s.level);
+            const newSlots = [...new Set(studentSlots(s).map(x => {
+              const slot = x.trim();
+              return slot.startsWith(subject + " - ") ? slot : `${subject} - ${slot}`;
+            }))];
+            batch.update(db.collection("students").doc(s.id), {
+              level: code,
+              slots: newSlots,
+              slot: firebase.firestore.FieldValue.delete()
+            });
+          }
+          await batch.commit();
+        }
+        closeModal();
+        toast(`Migrated ${targets.length} student(s)`);
+      } catch (e) {
+        $("confirmMigrate").disabled = false;
+        toast("Migration failed: " + (e.message || e));
       }
     };
   };
