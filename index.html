@@ -475,6 +475,24 @@
             <div class="balance-big" id="balanceNum">0</div>
           </div>
         </div>
+        <div id="rankBox" style="margin-top:10px; padding-top:10px; border-top:1px solid var(--line)">
+          <div class="row" style="align-items:center">
+            <div class="grow">
+              <span style="font-size:22px" id="rankIcon"></span>
+              <strong id="rankName">—</strong>
+              <span class="muted small" id="rankEarned"></span>
+            </div>
+            <div class="muted small" id="rankNext"></div>
+          </div>
+          <div class="hpbar" style="margin-top:6px"><div id="rankBar" style="width:0%"></div></div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="row" style="align-items:center">
+          <h3 style="margin:0" class="grow">My badges</h3>
+          <span class="muted small" id="badgeCount"></span>
+        </div>
+        <div id="myBadges" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:10px;margin-top:10px"></div>
       </div>
       <div class="card">
         <h3 style="margin-top:0">My marks history</h3>
@@ -582,6 +600,59 @@ const BONUS_BEHAVIOURS = [
 ];
 const TEST_PAPER_AWARD = 10;
 const MAX_PDF_BYTES = 10 * 1024 * 1024; // 10 MB
+
+// Lifetime rank — driven by total marks earned (not spendable balance), so
+// buying things in the shop never lowers a student's standing.
+const RANKS = [
+  { name: "Novice",     min: 0,    icon: "🌱" },
+  { name: "Apprentice", min: 100,  icon: "📘" },
+  { name: "Scholar",    min: 300,  icon: "🎓" },
+  { name: "Expert",     min: 600,  icon: "⭐" },
+  { name: "Master",     min: 1000, icon: "👑" },
+];
+function rankFor(earned) {
+  let r = RANKS[0];
+  for (const t of RANKS) if (earned >= t.min) r = t;
+  return r;
+}
+// One-off achievement badges, computed from data already on the student page.
+const ACHIEVEMENTS = [
+  { icon: "📝", name: "First Steps", desc: "Upload your first test paper", test: s => s.papers >= 1 },
+  { icon: "📚", name: "Bookworm",   desc: "Upload 10 test papers",        test: s => s.papers >= 10 },
+  { icon: "💯", name: "Century",    desc: "Earn 100 marks all-time",      test: s => s.earned >= 100 },
+  { icon: "🎓", name: "Scholar",    desc: "Reach the Scholar rank",       test: s => s.earned >= 300 },
+  { icon: "💰", name: "Big Earner", desc: "Earn 600 marks all-time",      test: s => s.earned >= 600 },
+  { icon: "🛍️", name: "Shopper",    desc: "Buy your first ability",       test: s => s.purchases >= 1 },
+  { icon: "🎒", name: "Collector",  desc: "Buy 5 abilities",              test: s => s.purchases >= 5 },
+  { icon: "👑", name: "Legend",     desc: "Reach the Master rank",        test: s => s.earned >= 1000 },
+];
+function renderAchievements(stats) {
+  const unlocked = ACHIEVEMENTS.filter(a => a.test(stats)).length;
+  $("badgeCount").textContent = `${unlocked} / ${ACHIEVEMENTS.length} unlocked`;
+  $("myBadges").innerHTML = ACHIEVEMENTS.map(a => {
+    const got = a.test(stats);
+    return `<div style="text-align:center;padding:10px;border:1px solid var(--line);border-radius:10px;${got ? "" : "opacity:.4;filter:grayscale(1)"}">
+      <div style="font-size:30px">${got ? a.icon : "🔒"}</div>
+      <div class="small" style="font-weight:700;margin-top:4px">${escapeHtml(a.name)}</div>
+      <div class="muted small">${escapeHtml(a.desc)}</div>
+    </div>`;
+  }).join("");
+}
+function renderRank(earned) {
+  const r = rankFor(earned);
+  const next = RANKS[RANKS.indexOf(r) + 1] || null;
+  $("rankIcon").textContent = r.icon;
+  $("rankName").textContent = `${r.name} rank`;
+  $("rankEarned").textContent = ` · ${earned} marks earned all-time`;
+  if (next) {
+    const pct = Math.round((earned - r.min) / (next.min - r.min) * 100);
+    $("rankBar").style.width = `${Math.max(0, Math.min(100, pct))}%`;
+    $("rankNext").textContent = `${next.min - earned} to ${next.icon} ${next.name}`;
+  } else {
+    $("rankBar").style.width = "100%";
+    $("rankNext").textContent = "Top rank reached!";
+  }
+}
 
 // Item shop: categories of buyable abilities, plus ready-made templates the
 // admin can pre-fill (they still paste their own image).
@@ -2082,6 +2153,9 @@ function showStudentMain() {
 
   wireTestPaperUpload();
 
+  const studentStats = { papers: 0, earned: 0, purchases: 0 };
+  renderAchievements(studentStats);
+
   unsubMyPapers = db.collection("testPapers").where("uid", "==", currentUser.uid).onSnapshot(snap => {
     const items = [];
     snap.forEach(d => items.push({ id: d.id, ...d.data() }));
@@ -2092,6 +2166,8 @@ function showStudentMain() {
         <td><a href="${escapeHtml(p.downloadURL||"#")}" target="_blank" rel="noopener">${escapeHtml(p.fileName||"paper.pdf")}</a></td>
         <td>+${p.marksAwarded || 0}</td>
       </tr>`).join("") || `<tr><td colspan="3" class="center muted">No uploads yet</td></tr>`;
+    studentStats.papers = items.length;
+    renderAchievements(studentStats);
   });
 
   let currentRewards = [];
@@ -2129,6 +2205,11 @@ function showStudentMain() {
     const items = [];
     snap.forEach(d => items.push({ id: d.id, ...d.data() }));
     items.sort((a, b) => (b.createdAt?.toMillis?.() || Infinity) - (a.createdAt?.toMillis?.() || Infinity));
+    const earned = items.reduce((sum, a) =>
+      sum + (!a.undone && (a.delta || 0) > 0 ? a.delta : 0), 0);
+    renderRank(earned);
+    studentStats.earned = earned;
+    renderAchievements(studentStats);
     $("myHistory").querySelector("tbody").innerHTML = items.map(a => {
       const delta = a.delta || 0;
       return `<tr${a.undone ? ' style="opacity:.5"' : ''}>
@@ -2193,6 +2274,8 @@ function showStudentMain() {
         <td>${p.cost||0}</td>
         <td><span class="chip">${escapeHtml(p.status||"")}</span></td>
       </tr>`).join("") || `<tr><td colspan="4" class="center muted">No abilities yet</td></tr>`;
+    studentStats.purchases = items.length;
+    renderAchievements(studentStats);
   });
 
   // Boss battle (shown to all students)
