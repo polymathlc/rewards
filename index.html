@@ -198,9 +198,17 @@
             }
             match /students/{id} {
               allow read: if request.auth != null;
-              allow write: if isAdmin() ||
-                (request.auth != null && request.resource.data.uid == request.auth.uid
-                 && resource.data.uid == null);
+              allow create, delete: if isAdmin();
+              allow update: if isAdmin()
+                // Claim an unclaimed record by putting your own uid on it.
+                || (request.auth != null && resource.data.uid == null
+                    && request.resource.data.uid == request.auth.uid)
+                // A linked student updating their own record — uploading a
+                // test paper, buying from the shop, claiming a reward, or
+                // revising a worksheet in the PDF Annotator all move marks
+                // from the student's own session.
+                || (request.auth != null && resource.data.uid == request.auth.uid
+                    && request.resource.data.uid == resource.data.uid);
             }
             match /rewards/{id} {
               allow read: if request.auth != null;
@@ -232,6 +240,16 @@
             match /awards/{id} {
               allow read, create: if request.auth != null;
               allow update, delete: if isAdmin();
+            }
+            // Written by the PDF Annotator (polymathlc/cer, pdf-annotator.html)
+            // when a student finds a keyword in revise mode. The doc id is
+            // "{uid}__{worksheetId}", so a student only ever touches their own.
+            match /annotatorRuns/{id} {
+              allow read: if isAdmin() ||
+                (request.auth != null && resource.data.uid == request.auth.uid);
+              allow create, update: if request.auth != null
+                && request.resource.data.uid == request.auth.uid;
+              allow delete: if isAdmin();
             }
             match /shopItems/{id} {
               allow read: if request.auth != null;
@@ -283,6 +301,7 @@
     <h1>Polymath Learning Centre Point System</h1>
     <span class="chip" id="roleChip"></span>
     <div class="spacer"></div>
+    <span class="muted small" id="appVersionBadge" style="display:none"></span>
     <span class="muted small" id="userEmail"></span>
     <button class="btn ghost" id="logoutBtn">Sign out</button>
   </div>
@@ -305,6 +324,7 @@
         <button class="tab" data-tab="adm-shop">Item Shop <span class="pill" id="purchasesPill" style="margin-left:6px; display:none;">0</span></button>
         <button class="tab" data-tab="adm-claims">Pending shipments <span class="pill" id="pendingPill" style="margin-left:6px; display:none;">0</span></button>
         <button class="tab" data-tab="adm-papers">Test papers <span class="pill" id="papersPill" style="margin-left:6px; display:none;">0</span></button>
+        <button class="tab" data-tab="adm-revision">Worksheet revision <span class="pill" id="revisionPill" style="margin-left:6px; display:none;">0</span></button>
       </div>
 
       <!-- Students tab -->
@@ -448,6 +468,42 @@
         </div>
       </div>
 
+      <!-- Worksheet revision tab -->
+      <div id="adm-revision" class="tab-pane hidden">
+        <div class="card">
+          <h3 style="margin-top:0">Worksheet revision</h3>
+          <p class="muted small" style="margin-top:-6px">
+            Students revise saved worksheets in the <strong>PDF Annotator</strong>. Every keyword they
+            recall in revise mode is worth <strong id="revKwMarks">+2 marks</strong>, with a
+            <strong id="revBonusMarks">+5 bonus</strong> the first time they find every keyword on a
+            worksheet. Marks land here automatically and show up in the student's history like any
+            other award.
+          </p>
+          <p style="margin-top:14px">
+            <a class="btn" id="admAnnotatorLink" href="#" target="_blank" rel="noopener">Open the PDF Annotator</a>
+          </p>
+        </div>
+        <div class="card">
+          <h3 style="margin-top:0">App links</h3>
+          <p class="muted small" style="margin-top:-6px">
+            Where each app is deployed. Saved to <code>config/links</code> so both apps can point at
+            each other without a code change — leave blank to use the built-in defaults.
+          </p>
+          <div class="field"><label>PDF Annotator URL</label><input id="linkAnnotator" type="url" placeholder="https://…/pdf-annotator.html" /></div>
+          <div class="field"><label>Reward system URL (this app)</label><input id="linkRewards" type="url" placeholder="https://…/rewards/" /></div>
+          <button class="btn" id="saveLinksBtn">Save links</button>
+        </div>
+        <div class="card">
+          <h3 style="margin-top:0">Revision activity</h3>
+          <div style="overflow-x:auto">
+            <table class="table" id="revisionTable">
+              <thead><tr><th>Last revised</th><th>Student</th><th>Worksheet</th><th>Keywords</th><th>Marks earned</th></tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
       <!-- Claims tab -->
       <div id="adm-claims" class="tab-pane hidden">
         <div class="card">
@@ -534,6 +590,28 @@
         <div class="muted small" id="uploadStatus" style="margin-top:8px"></div>
       </div>
       <div class="card">
+        <h3 style="margin-top:0">Revise a worksheet for marks</h3>
+        <p class="muted small" style="margin-top:-6px">
+          Open one of your saved worksheets in the <strong>PDF Annotator</strong>, switch on
+          <strong>Revise mode</strong> and type the keywords from memory. Each keyword you find for the
+          first time is worth <strong id="revKwMarksStudent">+2 marks</strong>, and finding every
+          keyword on a worksheet earns a <strong id="revBonusMarksStudent">+5 bonus</strong>. Marks
+          arrive here straight away.
+        </p>
+        <p style="margin-top:16px">
+          <a class="btn" id="annotatorLink" href="#" target="_blank" rel="noopener">Open the PDF Annotator</a>
+        </p>
+      </div>
+      <div class="card">
+        <h3 style="margin-top:0">My worksheet revision</h3>
+        <div style="overflow-x:auto">
+          <table class="table" id="myRevision">
+            <thead><tr><th>Last revised</th><th>Worksheet</th><th>Keywords found</th><th>Marks earned</th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+      <div class="card">
         <h3 style="margin-top:0">More ways to earn extra marks</h3>
         <p class="muted small" style="margin-top:-6px">Tell the teacher when any of these happen — they'll add the marks to your account.</p>
         <ul id="bonusBehaviours" style="margin:0; padding-left:18px; line-height:1.8"></ul>
@@ -604,6 +682,7 @@ const firebaseConfig = {
   measurementId: "G-0MWZFG211D"
 };
 const ADMIN_EMAIL = "chungzhikai@gmail.com";
+const APP_VERSION = "v1.1.0";
 // ============================================================
 
 firebase.initializeApp(firebaseConfig);
@@ -619,6 +698,20 @@ const BONUS_BEHAVIOURS = [
 ];
 const TEST_PAPER_AWARD = 10;
 const MAX_PDF_BYTES = 10 * 1024 * 1024; // 10 MB
+
+// ---- Link to the PDF Annotator (polymathlc/cer, pdf-annotator.html) ----
+// Both apps share this Firebase project. When a student revises a saved
+// worksheet there, the annotator writes an `annotatorRuns/{uid__docId}` doc,
+// tops up `students.marks` and appends an `awards` row with source
+// "annotator" — exactly the same shape as a test-paper upload. These two
+// numbers must stay in step with the annotator's KEYWORD_MARKS /
+// COMPLETE_BONUS.
+const ANNOTATOR_KEYWORD_MARKS = 2;   // per keyword found for the first time
+const ANNOTATOR_COMPLETE_BONUS = 5;  // one-off, when a worksheet is fully revised
+const ANNOTATOR_URL_FALLBACK = "https://polymathlc.github.io/cer/pdf-annotator.html";
+// config/links holds the deployed URL of each app so the two can point at
+// each other without a code change. Edited by the admin on the Revision tab.
+let appLinks = { annotatorUrl: ANNOTATOR_URL_FALLBACK, rewardsUrl: "" };
 
 // Lifetime rank — driven by total marks earned (not spendable balance), so
 // buying things in the shop never lowers a student's standing.
@@ -643,6 +736,8 @@ const ACHIEVEMENTS = [
   { icon: "💰", name: "Big Earner", desc: "Earn 600 marks all-time",      test: s => s.earned >= 600 },
   { icon: "🛍️", name: "Shopper",    desc: "Buy your first ability",       test: s => s.purchases >= 1 },
   { icon: "🎒", name: "Collector",  desc: "Buy 5 abilities",              test: s => s.purchases >= 5 },
+  { icon: "🔑", name: "Key Finder", desc: "Fully revise a worksheet",     test: s => s.revisions >= 1 },
+  { icon: "🧠", name: "Revision Machine", desc: "Fully revise 5 worksheets", test: s => s.revisions >= 5 },
   { icon: "👑", name: "Legend",     desc: "Reach the Master rank",        test: s => s.earned >= 1000 },
 ];
 function renderAchievements(stats) {
@@ -824,7 +919,17 @@ let currentUser = null;
 let myStudent = null;            // student doc {id,...} once linked
 let unsubStudents, unsubRewards, unsubClaims, unsubMyClaims, unsubMyStudent, unsubPapers, unsubMyPapers, unsubBranding, unsubPodium, unsubBosses;
 let unsubShopItems, unsubPurchases, unsubMyShop, unsubMyPurchases, unsubMyHistory;
+let unsubLinks, unsubRevision, unsubMyRevision;
 let podiumTop = [];
+
+// Point every "open the other app" button at the configured URL.
+function applyAppLinks() {
+  const url = appLinks.annotatorUrl || ANNOTATOR_URL_FALLBACK;
+  ["annotatorLink", "admAnnotatorLink"].forEach(id => { const a = $(id); if (a) a.href = url; });
+  const ann = $("linkAnnotator"), rew = $("linkRewards");
+  if (ann && document.activeElement !== ann) ann.value = appLinks.annotatorUrl || "";
+  if (rew && document.activeElement !== rew) rew.value = appLinks.rewardsUrl || "";
+}
 
 function applyLogo(dataUrl) {
   const top = $("brandLogo");
@@ -846,9 +951,10 @@ function applyLogo(dataUrl) {
 
 auth.onAuthStateChanged(async (user) => {
   // Tear down any prior listeners
-  [unsubStudents, unsubRewards, unsubClaims, unsubMyClaims, unsubMyStudent, unsubPapers, unsubMyPapers, unsubBranding, unsubPodium, unsubBosses, unsubShopItems, unsubPurchases, unsubMyShop, unsubMyPurchases, unsubMyHistory].forEach(fn => { try { fn && fn(); } catch{} });
+  [unsubStudents, unsubRewards, unsubClaims, unsubMyClaims, unsubMyStudent, unsubPapers, unsubMyPapers, unsubBranding, unsubPodium, unsubBosses, unsubShopItems, unsubPurchases, unsubMyShop, unsubMyPurchases, unsubMyHistory, unsubLinks, unsubRevision, unsubMyRevision].forEach(fn => { try { fn && fn(); } catch{} });
   unsubStudents = unsubRewards = unsubClaims = unsubMyClaims = unsubMyStudent = unsubPapers = unsubMyPapers = unsubBranding = unsubPodium = unsubBosses = null;
   unsubShopItems = unsubPurchases = unsubMyShop = unsubMyPurchases = unsubMyHistory = null;
+  unsubLinks = unsubRevision = unsubMyRevision = null;
   myStudent = null;
   podiumTop = [];
   hide($("prizePodium"));
@@ -866,8 +972,29 @@ auth.onAuthStateChanged(async (user) => {
   const isAdmin = (user.email || "").toLowerCase() === ADMIN_EMAIL.toLowerCase();
   $("roleChip").textContent = isAdmin ? "Admin" : "Student";
 
+  // Version badge — admin only, so the deployed build can be checked at a glance.
+  const verBadge = $("appVersionBadge");
+  verBadge.textContent = APP_VERSION;
+  verBadge.style.display = isAdmin ? "inline" : "none";
+
   unsubBranding = db.collection("config").doc("branding").onSnapshot(
     (doc) => applyLogo(doc.exists ? (doc.data().logo || null) : null),
+    () => {}
+  );
+
+  // Shared app URLs, so the annotator and this app can link to each other.
+  [$("revKwMarks"), $("revKwMarksStudent")].forEach(el => { if (el) el.textContent = `+${ANNOTATOR_KEYWORD_MARKS} marks`; });
+  [$("revBonusMarks"), $("revBonusMarksStudent")].forEach(el => { if (el) el.textContent = `+${ANNOTATOR_COMPLETE_BONUS} bonus`; });
+  applyAppLinks();
+  unsubLinks = db.collection("config").doc("links").onSnapshot(
+    (doc) => {
+      const d = doc.exists ? doc.data() : {};
+      appLinks = {
+        annotatorUrl: d.annotatorUrl || ANNOTATOR_URL_FALLBACK,
+        rewardsUrl: d.rewardsUrl || ""
+      };
+      applyAppLinks();
+    },
     () => {}
   );
 
@@ -1652,6 +1779,41 @@ function bootAdmin() {
     }
   });
 
+  // Worksheet revision — one row per student per worksheet, written by the
+  // PDF Annotator as keywords are found.
+  unsubRevision = db.collection("annotatorRuns").onSnapshot(snap => {
+    const runs = [];
+    snap.forEach(doc => runs.push({ id: doc.id, ...doc.data() }));
+    runs.sort((a, b) => (b.updatedAt?.toMillis?.() || 0) - (a.updatedAt?.toMillis?.() || 0));
+    $("revisionTable").querySelector("tbody").innerHTML = runs.map(r => `
+      <tr>
+        <td class="small">${fmtTime(r.updatedAt)}</td>
+        <td>${escapeHtml(r.studentName || "")}<div class="muted small">${escapeHtml(r.studentClass || "")}</div></td>
+        <td>${escapeHtml(r.docName || "Untitled")}<div class="muted small">${escapeHtml(r.level || "")}</div></td>
+        <td>${r.keywordsFound || 0} / ${r.keywordTotal || 0}${r.completed ? ` <span class="pill">complete</span>` : ""}</td>
+        <td>+${r.marksAwarded || 0}</td>
+      </tr>`).join("") || `<tr><td colspan="5" class="center muted">No worksheet revision yet</td></tr>`;
+    const pill = $("revisionPill");
+    if (runs.length > 0) { pill.style.display = "inline-block"; pill.textContent = runs.length; }
+    else pill.style.display = "none";
+  }, () => {});
+
+  $("saveLinksBtn").onclick = async () => {
+    const btn = $("saveLinksBtn");
+    btn.disabled = true;
+    try {
+      await db.collection("config").doc("links").set({
+        annotatorUrl: $("linkAnnotator").value.trim(),
+        rewardsUrl: $("linkRewards").value.trim(),
+        updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+      }, { merge: true });
+      toast("App links saved");
+    } catch (e) {
+      toast("Could not save links: " + (e.message || e));
+    }
+    btn.disabled = false;
+  };
+
   $("claimsTable").addEventListener("click", async (e) => {
     const btn = e.target.closest("button"); if (!btn) return;
     const id = e.target.closest("tr")?.dataset.id; if (!id) return;
@@ -2308,8 +2470,24 @@ function showStudentMain() {
 
   wireTestPaperUpload();
 
-  const studentStats = { papers: 0, earned: 0, purchases: 0 };
+  const studentStats = { papers: 0, earned: 0, purchases: 0, revisions: 0 };
   renderAchievements(studentStats);
+
+  // Worksheet revision done in the PDF Annotator.
+  unsubMyRevision = db.collection("annotatorRuns").where("uid", "==", currentUser.uid).onSnapshot(snap => {
+    const runs = [];
+    snap.forEach(d => runs.push({ id: d.id, ...d.data() }));
+    runs.sort((a, b) => (b.updatedAt?.toMillis?.() || 0) - (a.updatedAt?.toMillis?.() || 0));
+    $("myRevision").querySelector("tbody").innerHTML = runs.map(r => `
+      <tr>
+        <td class="small">${fmtTime(r.updatedAt)}</td>
+        <td>${escapeHtml(r.docName || "Untitled")}</td>
+        <td>${r.keywordsFound || 0} / ${r.keywordTotal || 0}${r.completed ? ` <span class="pill">complete</span>` : ""}</td>
+        <td>+${r.marksAwarded || 0}</td>
+      </tr>`).join("") || `<tr><td colspan="4" class="center muted">Nothing revised yet — open the PDF Annotator to start</td></tr>`;
+    studentStats.revisions = runs.filter(r => r.completed).length;
+    renderAchievements(studentStats);
+  }, () => {});
 
   unsubMyPapers = db.collection("testPapers").where("uid", "==", currentUser.uid).onSnapshot(snap => {
     const items = [];
