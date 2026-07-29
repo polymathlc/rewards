@@ -13,11 +13,12 @@ Guidance for Claude when working in this repo.
   live in the big comment block near the top of the file — keep them in step with the code.
 - `monster-cards-beta.html` — Monster Codex trading-card beta.
 
-## Linked app — the PDF Annotator (separate repo)
-`polymathlc/cer` → `pdf-annotator.html` shares this Firebase project and can award marks into this
-system. Its **Reward** button is **admin-only**: it opens the students of one class (the worksheet's
-saved `slot`, or whichever class the admin picks) and hands out marks on the spot. Each award,
-from the admin's own session:
+## Linked app — the Ans Key annotator (separate repo)
+`polymathlc/anskey` → `index.html` shares this Firebase project and can award marks into this
+system. Its **Reward** button is **admin-only**: it opens the students of one class (guessed from
+the worksheet's day, level and lesson time, then pinned to the worksheet as `rewardClass`, and
+always changeable in the dropdown) and hands out marks on the spot. Each award, from the admin's
+own session:
 
 - updates `students.marks`;
 - appends an `awards` row with `source: "annotator"`, so it appears in the student's marks history
@@ -34,6 +35,9 @@ in the annotator is visible to a student account, so don't add UI here that assu
 
 **Both sides ship together.** The annotator writes the same `awards` shape this app's `awardDoc()`
 produces; change one and you change the other. Push and merge both.
+
+The older annotator in `polymathlc/cer` (`pdf-annotator.html`) used to do this and no longer does —
+the Reward window was moved to `polymathlc/anskey`. Don't reinstate it there.
 
 ## Versioning convention — applies to EVERY change (do this every time)
 1. **Bump the version.** In `index.html`, update `const APP_VERSION = "vX.Y.Z"` (search
