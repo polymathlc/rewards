@@ -14,26 +14,21 @@ Guidance for Claude when working in this repo.
 - `monster-cards-beta.html` — Monster Codex trading-card beta.
 
 ## Linked app — the PDF Annotator (separate repo)
-`polymathlc/cer` → `pdf-annotator.html` is wired into this reward system and shares this Firebase
-project. When a student revises a saved worksheet there (Revise mode, typing keywords from
-memory) the annotator, straight from the student's own session:
+`polymathlc/cer` → `pdf-annotator.html` shares this Firebase project and can award marks into this
+system. Its **Reward** button is **admin-only**: it opens the students of one class (the worksheet's
+saved `slot`, or whichever class the admin picks) and hands out marks on the spot. Each award,
+from the admin's own session:
 
-- tops up `students.marks` — `ANNOTATOR_KEYWORD_MARKS` (2) per keyword found for the first time,
-  plus a one-off `ANNOTATOR_COMPLETE_BONUS` (5) for finding every keyword on a worksheet;
-- appends an `awards` row with `source: "annotator"`, so it shows in the student's marks history
-  and can be undone like any other award;
-- damages the active `bosses` — same as a test-paper upload;
-- writes `annotatorRuns/{uid}__{worksheetId}` holding `foundWords`, the keywords already paid
-  for, which is what makes the award idempotent. Never award marks without re-checking that list
-  inside the transaction.
+- updates `students.marks`;
+- appends an `awards` row with `source: "annotator"`, so it appears in the student's marks history
+  here and can be undone like any other award;
+- damages the active `bosses`, the same way a test-paper upload does.
 
-`config/links` (`{ annotatorUrl, rewardsUrl }`) is edited by the admin on the **Worksheet
-revision** tab and is how the two apps point at each other — do not hard-code deploy URLs beyond
-the fallbacks.
+There is **no student-facing earning path in the annotator** — students earn in this app. Nothing
+in the annotator is visible to a student account, so don't add UI here that assumes otherwise.
 
-**Both sides ship together.** `ANNOTATOR_KEYWORD_MARKS` / `ANNOTATOR_COMPLETE_BONUS` here must
-stay equal to `KEYWORD_MARKS` / `COMPLETE_BONUS` in `pdf-annotator.html`, and any change to the
-`annotatorRuns` shape needs a matching change in the other repo. Push and merge both.
+**Both sides ship together.** The annotator writes the same `awards` shape this app's `awardDoc()`
+produces; change one and you change the other. Push and merge both.
 
 ## Versioning convention — applies to EVERY change (do this every time)
 1. **Bump the version.** In `index.html`, update `const APP_VERSION = "vX.Y.Z"` (search
