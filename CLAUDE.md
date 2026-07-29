@@ -24,6 +24,11 @@ from the admin's own session:
   here and can be undone like any other award;
 - damages the active `bosses`, the same way a test-paper upload does.
 
+The annotator's Reward window also edits the roster: it can add a `students` doc for a new name in
+the class shown, drop a class from a student's `slots`, or delete a `students` doc outright — the
+same operations as the Students tab here, just reachable mid-lesson. A student removed from a class
+keeps their record, marks and history; only *Delete entirely* removes the doc.
+
 There is **no student-facing earning path in the annotator** — students earn in this app. Nothing
 in the annotator is visible to a student account, so don't add UI here that assumes otherwise.
 
