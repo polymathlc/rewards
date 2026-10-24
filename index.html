@@ -4,6 +4,17 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
 <title>Polymath Learning Centre Point System</title>
+<!-- 📲 Installable app (Polymath install kit v2.0.0): manifest + icons make "Install" / "Add to Home Screen"
+     work on PC, Android and iPhone/iPad. pwa-install.js registers sw.js and drives every [data-pwa-install] control. -->
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#FFFFFF">
+<link rel="icon" type="image/png" sizes="32x32" href="assets/app-icons/favicon-32.png">
+<link rel="apple-touch-icon" href="assets/app-icons/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Rewards">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<style>[data-pwa-install][data-pwa-hidden]{display:none!important}</style>
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700;900&display=swap" rel="stylesheet" />
@@ -50,6 +61,7 @@
   .topbar .spacer { flex: 1; }
   .topbar .logo { height: 36px; width: auto; max-width: 120px; object-fit: contain; display: none; }
   .topbar .logo.show { display: block; }
+  .topbar .install-app-btn { white-space: nowrap; }
   .logo-paste {
     border: 1px dashed var(--line); border-radius: 8px; padding: 6px 10px;
     font-size: 12px; color: var(--muted); background: #fafbff; cursor: pointer;
@@ -171,6 +183,8 @@
   .prize-slot .voucher { font-size: 20px; font-weight: 700; color: var(--good); }
   .prize-slot .pname { font-weight: 600; margin-top: 4px; }
   @media (max-width: 600px) {
+    /* On a phone the topbar wraps onto a second row, so 📲 Install app and Sign out stay on screen. */
+    .topbar { flex-wrap: wrap; row-gap: 10px; padding: 12px 14px; }
     .container { padding: 12px; }
     .card { padding: 12px; }
     .podium { grid-template-columns: 1fr; }
@@ -292,6 +306,9 @@
     <div class="spacer"></div>
     <span class="muted small" id="appVersionBadge" style="display:none"></span>
     <span class="muted small" id="userEmail"></span>
+    <!-- 📲 Install control for everyone signed in (students and admin). It starts hidden; pwa-install.js
+         shows it, and hides it again inside the installed app and inside another page's frame. -->
+    <button type="button" class="btn ghost install-app-btn" id="installAppBtn" data-pwa-install data-pwa-hidden title="Install Polymath Rewards as an app on this computer, phone or tablet — its own icon and window, no app store needed"><span aria-hidden="true">📲</span> Install app</button>
     <button class="btn ghost" id="logoutBtn">Sign out</button>
   </div>
   <div class="container">
@@ -612,7 +629,7 @@ const firebaseConfig = {
   measurementId: "G-0MWZFG211D"
 };
 const ADMIN_EMAIL = "chungzhikai@gmail.com";
-const APP_VERSION = "v1.2.0";
+const APP_VERSION = "v1.3.0";
 // ============================================================
 
 firebase.initializeApp(firebaseConfig);
@@ -2682,5 +2699,7 @@ function compressImage(file, maxDim, quality) {
   });
 }
 </script>
+<!-- 📲 The Polymath install kit (shared byte for byte with every Polymath app — see CLAUDE.md). A classic deferred script. -->
+<script defer src="pwa-install.js?v=2.0.0" data-app-name="Polymath Rewards" data-app-key="rewards" data-app-icon="assets/app-icons/icon-192.png" data-accent="#B26A00" data-sw="sw.js" data-floating="auto"></script>
 </body>
 </html>
