@@ -17,6 +17,11 @@ Guidance for Claude when working in this repo.
 Since **v1.3.0** the Point System installs as **Polymath Rewards** ("Rewards" under the icon) on PC,
 Android and iPhone/iPad. It is a Progressive Web App, not a store app.
 
+- **The offline page carries its icon inline (sw 2.0.1, kit v2.0.1).** `sw.js` answers page loads only, so an
+  icon file beside `offline.html` could never arrive with no connection (it showed as a broken picture).
+  The icon is a `data:` URI inside `offline.html`, `PRECACHE` is just the offline page, and `SW_VERSION`
+  went to 2.0.1 so installed copies re-cache it. The browser harness now checks the icon shows offline.
+
 - **The files.** `manifest.webmanifest` (relative `id` / `start_url` / `scope` = `./`, so the same file
   works at `polymathlc.com.sg/rewards/` and on github.io), the icons in `assets/app-icons/` (192/512
   `any`, 192/512 `maskable`, 180 `apple-touch-icon`, 32 favicon — drawn by the kit), `sw.js`,
