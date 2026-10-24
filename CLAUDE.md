@@ -13,6 +13,42 @@ Guidance for Claude when working in this repo.
   live in the big comment block near the top of the file — keep them in step with the code.
 - `monster-cards-beta.html` — Monster Codex trading-card beta.
 
+## 📲 Installable app (Polymath install kit v2.0.0)
+Since **v1.3.0** the Point System installs as **Polymath Rewards** ("Rewards" under the icon) on PC,
+Android and iPhone/iPad. It is a Progressive Web App, not a store app.
+
+- **The files.** `manifest.webmanifest` (relative `id` / `start_url` / `scope` = `./`, so the same file
+  works at `polymathlc.com.sg/rewards/` and on github.io), the icons in `assets/app-icons/` (192/512
+  `any`, 192/512 `maskable`, 180 `apple-touch-icon`, 32 favicon — drawn by the kit), `sw.js`,
+  `offline.html`, `pwa-install.js`, and the head tags in `index.html` (manifest, theme-color, favicon,
+  apple-touch-icon, apple-mobile-web-app-*, and the inline `[data-pwa-install][data-pwa-hidden]` hiding
+  rule). The installer is loaded once, just before `</body>`, as a classic
+  `<script defer src="pwa-install.js?v=2.0.0" …>` whose `data-*` attributes name the app, its key
+  (`rewards`), icon and accent.
+- **`pwa-install.js` is byte for byte the kit shared with every Polymath app** (polymathlc/cer
+  `student/` and `online/` carry copies, as do the other app repos). Never fork it or patch it here:
+  change it in all of them together, and bump the `?v=` on every tag that loads it. Repo-local tweaks
+  (e.g. moving the floating button) go in `index.html`'s own CSS.
+- **`sw.js` never caches the app.** It answers only same-origin GET page loads (navigations), network
+  first, and shows `offline.html` when the network fails; scripts, Firebase, Storage, POSTs and other
+  origins are never touched, so releases still reach phones straight away. It uses its own cache prefix,
+  `polymath-rewards-shell-`, because every app lives on the one polymathlc.com.sg origin and shares its
+  Cache Storage — it only ever deletes its own old caches.
+- **The controls.** Every `[data-pwa-install]` control starts `data-pwa-hidden`; the installer shows it,
+  and keeps it hidden inside the installed app and when the page is inside another page's frame. The
+  header control is `#installAppBtn` (📲 Install app) in the `.topbar`, between the e-mail and
+  **Sign out** — outside every admin-only block, so students and the admin both see it once signed in.
+  It is a `.btn ghost` like Sign out; on a phone (≤ 600px) the topbar wraps onto a second row so both
+  buttons stay on screen.
+  Pressing it uses the browser's own install prompt where there is one (Chrome / Edge on a computer,
+  Chrome on Android), else shows the steps for that browser (iPhone/iPad: Share → Add to Home Screen).
+  The sign-in screen has no control of its own, so the kit's small floating button (bottom right,
+  `data-floating="auto"`) covers it; nothing of this app sits at the bottom right, so it needs no nudge.
+- **Run after touching any of it** (CI runs both on every PR, `.github/workflows/installable-app.yml`):
+  `node --test tools/pwa-install-tests.mjs` and
+  `PW=/path/to/playwright/index.mjs node tools/pwa-install-browser.mjs`
+  (`PWA_SCREENSHOTS=some/folder` saves a picture of each step).
+
 ## Linked app — the Ans Key annotator (separate repo)
 `polymathlc/anskey` → `index.html` shares this Firebase project and can award marks into this
 system. Its **Reward** button is **admin-only**: it opens the students of one class (guessed from
