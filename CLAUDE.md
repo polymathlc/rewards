@@ -54,6 +54,29 @@ Android and iPhone/iPad. It is a Progressive Web App, not a store app.
   `PW=/path/to/playwright/index.mjs node tools/pwa-install-browser.mjs`
   (`PWA_SCREENSHOTS=some/folder` saves a picture of each step).
 
+## 🔎 A student finds their name by CLASS, not by level (v1.3.2)
+`normLevel` / `setupChoices` / `PICK_ANY_LEVEL` / `PICK_NO_CLASS` (between `FINDING YOUR NAME (pure)` and
+`End finding your name` in `index.html`) and the setup half of `bootStudent` (`paintSetup`, `unsubSetup`).
+
+A student's first sign-in links their Google account to a `students` record by choosing level → class → name.
+The names used to be matched on the record's level AND its class, so a record whose level disagreed with its
+class (the Ans Key Reward window used to prefill the WORKSHEET's level, filing a P6 pupil as P5) or had no level
+at all was invisible — the blank level was even offered as an option that looked exactly like the placeholder.
+
+- **Names are matched on the class alone.** A class is offered under every level anyone in it is at (claimed or
+  not, normalised), so a pupil with the wrong or no level is under his classmates' level and his own.
+- **"Not sure — show every class"** is always offered while anything is unclaimed; it is the only door to a class
+  nobody has a level for, and to a record with no class at all ("No class listed").
+- **`normLevel`** folds `p5` / `P 5` / `Primary 5` → `P5` and `Sec 1` → `S1`, and keeps anything else as typed.
+  polymathlc/anskey's `rwNormLevel` is the same function; anskey's `tools/reward-roster-tests.mjs` compares the
+  two when both repos are checked out side by side. Change them together.
+- **The list is live** (`unsubSetup`, an `onSnapshot`), so a name the teacher adds appears without a reload, and
+  `paintSetup` keeps what the student has already chosen. The listener is in the sign-out teardown list and is
+  dropped the moment the account links — leave either out and it keeps firing into a screen that has gone.
+- Two records with one name in one class are told apart by their level.
+- Run `node --test tools/find-your-name-tests.mjs` and `PW=… node tools/find-your-name-browser.mjs` (CI:
+  `.github/workflows/find-your-name.yml`). The browser check runs the real page on an in-memory Firebase.
+
 ## Linked app — the Ans Key annotator (separate repo)
 `polymathlc/anskey` → `index.html` shares this Firebase project and can award marks into this
 system. Its **Reward** button is **admin-only**: it opens the students of one class (guessed from
@@ -67,7 +90,7 @@ own session:
 - damages the active `bosses`, the same way a test-paper upload does.
 
 The annotator's Reward window also edits the roster: it can add a `students` doc for a new name in
-the class shown, drop a class from a student's `slots`, or delete a `students` doc outright — the
+the class shown (it requires a level and prefills the class's own level, as this app's Add form does), drop a class from a student's `slots`, or delete a `students` doc outright — the
 same operations as the Students tab here, just reachable mid-lesson. A student removed from a class
 keeps their record, marks and history; only *Delete entirely* removes the doc.
 

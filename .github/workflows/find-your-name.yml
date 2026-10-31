@@ -1,0 +1,32 @@
+name: Student finds their name
+on:
+  pull_request:
+    paths: ['index.html', 'tools/find-your-name-*.mjs', '.github/workflows/find-your-name.yml']
+  push:
+    branches: [claude/points-rewards-webapp-VdJOj]
+    paths: ['index.html', 'tools/find-your-name-*.mjs', '.github/workflows/find-your-name.yml']
+permissions:
+  contents: read
+jobs:
+  link:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: The level → class → name picker, run from the shipped page
+        run: node --test tools/find-your-name-tests.mjs
+      - run: npm install --no-save --package-lock=false playwright@1.62.1
+      - run: npx playwright install --with-deps chromium
+      - name: First sign-in in a real browser (computer and phone)
+        run: node tools/find-your-name-browser.mjs
+        env:
+          NAME_SCREENSHOTS: artifacts/name
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: find-your-name-previews
+          path: artifacts/name
+          if-no-files-found: ignore
