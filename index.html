@@ -492,11 +492,12 @@
       <div class="card">
         <h2 style="margin-top:0">Welcome! Let's find you.</h2>
         <p class="muted">Choose your level and class time, then pick your name.</p>
+        <p class="muted small">Not sure of your level, or can't see your class? Choose <strong>Not sure — show every class</strong> under Level.</p>
         <div class="field"><label>Level</label><select id="pickLevel"><option value="">— choose —</option></select></div>
         <div class="field"><label>Time slot</label><select id="pickSlot" disabled><option value="">— choose level first —</option></select></div>
         <div class="field"><label>Your name</label><select id="pickName" disabled><option value="">— choose slot first —</option></select></div>
         <button class="btn" id="linkStudentBtn" disabled>That's me</button>
-        <p class="small muted" style="margin-top:10px">Can't find your name? Ask the teacher to add you.</p>
+        <p class="small muted" style="margin-top:10px">Can't find your name? Ask the teacher to add you — it appears here as soon as they do.</p>
       </div>
     </div>
 
@@ -629,7 +630,7 @@ const firebaseConfig = {
   measurementId: "G-0MWZFG211D"
 };
 const ADMIN_EMAIL = "chungzhikai@gmail.com";
-const APP_VERSION = "v1.3.1";
+const APP_VERSION = "v1.3.2";
 // ============================================================
 
 firebase.initializeApp(firebaseConfig);
@@ -849,7 +850,7 @@ $("logoutBtn").addEventListener("click", () => auth.signOut());
 let currentUser = null;
 let myStudent = null;            // student doc {id,...} once linked
 let unsubStudents, unsubRewards, unsubClaims, unsubMyClaims, unsubMyStudent, unsubPapers, unsubMyPapers, unsubBranding, unsubPodium, unsubBosses;
-let unsubShopItems, unsubPurchases, unsubMyShop, unsubMyPurchases, unsubMyHistory;
+let unsubShopItems, unsubPurchases, unsubMyShop, unsubMyPurchases, unsubMyHistory, unsubSetup;
 let podiumTop = [];
 
 function applyLogo(dataUrl) {
@@ -872,9 +873,9 @@ function applyLogo(dataUrl) {
 
 auth.onAuthStateChanged(async (user) => {
   // Tear down any prior listeners
-  [unsubStudents, unsubRewards, unsubClaims, unsubMyClaims, unsubMyStudent, unsubPapers, unsubMyPapers, unsubBranding, unsubPodium, unsubBosses, unsubShopItems, unsubPurchases, unsubMyShop, unsubMyPurchases, unsubMyHistory].forEach(fn => { try { fn && fn(); } catch{} });
+  [unsubStudents, unsubRewards, unsubClaims, unsubMyClaims, unsubMyStudent, unsubPapers, unsubMyPapers, unsubBranding, unsubPodium, unsubBosses, unsubShopItems, unsubPurchases, unsubMyShop, unsubMyPurchases, unsubMyHistory, unsubSetup].forEach(fn => { try { fn && fn(); } catch{} });
   unsubStudents = unsubRewards = unsubClaims = unsubMyClaims = unsubMyStudent = unsubPapers = unsubMyPapers = unsubBranding = unsubPodium = unsubBosses = null;
-  unsubShopItems = unsubPurchases = unsubMyShop = unsubMyPurchases = unsubMyHistory = null;
+  unsubShopItems = unsubPurchases = unsubMyShop = unsubMyPurchases = unsubMyHistory = unsubSetup = null;
   myStudent = null;
   podiumTop = [];
   hide($("prizePodium"));
@@ -2269,6 +2270,72 @@ function openBuyModal(item) {
   };
 }
 
+// ---------- FINDING YOUR NAME (pure) ----------
+// A student links their account by choosing level → class → name. The CLASS
+// is what identifies them; the level only narrows the list of classes. Records
+// are added here AND from the Ans Key annotator's Reward window, and a record's
+// level can disagree with its class (a P6 pupil filed as P5 because a P5
+// worksheet was open) or be blank. Matching names on level as well as class hid
+// exactly those pupils, so names are matched on the class alone, a class is
+// offered under every level anyone in it is at, and "Not sure" offers them all.
+const PICK_ANY_LEVEL = "*";
+const PICK_NO_CLASS = "__none__";
+
+// "p5", "P 5", "Pri 5", "Primary 5" → "P5"; "Sec 1", "Secondary 1" → "S1".
+// Anything else is kept as typed (trimmed), so an unusual level still groups.
+// polymathlc/anskey's rwNormLevel is the same function — keep them in step.
+function normLevel(v) {
+  const t = String(v == null ? "" : v).trim().replace(/\s+/g, " ");
+  if (!t) return "";
+  const p = t.match(/^(?:p|pri|primary)\s*\.?\s*(\d)$/i);
+  if (p) return "P" + p[1];
+  const s = t.match(/^(?:s|sec|secondary)\s*\.?\s*(\d)$/i);
+  if (s) return "S" + s[1];
+  return t;
+}
+
+function setupChoices(all) {
+  const byText = (a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" });
+  const unclaimed = all.filter(s => !s.uid);
+  // Every level anyone in the class is at, claimed or not: a pupil with no level
+  // (or the wrong one) is found under the level his classmates are at.
+  const slotLevels = new Map();
+  all.forEach(s => {
+    const lv = normLevel(s.level);
+    studentSlots(s).forEach(sl => {
+      if (!slotLevels.has(sl)) slotLevels.set(sl, new Set());
+      if (lv) slotLevels.get(sl).add(lv);
+    });
+  });
+  const openSlots = [...new Set(unclaimed.flatMap(studentSlots))].sort(byText);
+  const levels = [...new Set(openSlots.flatMap(sl => [...slotLevels.get(sl)]))].sort(byText);
+  const classless = unclaimed.some(s => !studentSlots(s).length);
+  return {
+    any: unclaimed.length > 0,
+    levels,
+    slotsFor(level) {
+      if (!level) return [];
+      if (level === PICK_ANY_LEVEL) return classless ? openSlots.concat(PICK_NO_CLASS) : openSlots.slice();
+      return openSlots.filter(sl => slotLevels.get(sl).has(level));
+    },
+    namesFor(slot) {
+      if (!slot) return [];
+      const rows = unclaimed
+        .filter(s => slot === PICK_NO_CLASS ? !studentSlots(s).length : studentSlots(s).includes(slot))
+        .sort((a, b) => byText(String(a.name || ""), String(b.name || "")));
+      // Two records with one name in one class are told apart by their level.
+      const seen = {};
+      rows.forEach(s => { const k = String(s.name || "").trim().toLowerCase(); seen[k] = (seen[k] || 0) + 1; });
+      return rows.map(s => {
+        const name = String(s.name || "").trim() || "(no name)";
+        const twin = seen[String(s.name || "").trim().toLowerCase()] > 1;
+        return { id: s.id, label: twin ? `${name} (${normLevel(s.level) || "no level"})` : name };
+      });
+    }
+  };
+}
+// ---------- End finding your name ----------
+
 // ---------- STUDENT ----------
 async function bootStudent() {
   // Find this user's linked student record (if any)
@@ -2279,48 +2346,75 @@ async function bootStudent() {
     showStudentMain();
     return;
   }
-  // First-time setup: pick level → slot → name
+  // First-time setup: pick level → class → name (see setupChoices).
   show($("setupView"));
   hide($("studentView"));
-  const all = await db.collection("students").get();
-  const unclaimed = []; all.forEach(d => { const s = { id: d.id, ...d.data() }; if (!s.uid) unclaimed.push(s); });
 
-  const levels = [...new Set(unclaimed.map(s => s.level))].sort();
   const levelSel = $("pickLevel"), slotSel = $("pickSlot"), nameSel = $("pickName");
-  levelSel.innerHTML = `<option value="">— choose —</option>` + levels.map(l => `<option>${escapeHtml(l)}</option>`).join("");
-  slotSel.innerHTML = `<option value="">— choose level first —</option>`; slotSel.disabled = true;
-  nameSel.innerHTML = `<option value="">— choose slot first —</option>`; nameSel.disabled = true;
-  $("linkStudentBtn").disabled = true;
+  let choices = setupChoices([]);
+  const option = (value, label, chosen) =>
+    `<option value="${escapeHtml(value)}"${value === chosen ? " selected" : ""}>${escapeHtml(label)}</option>`;
 
-  levelSel.onchange = () => {
-    const lv = levelSel.value;
-    const slots = [...new Set(unclaimed.filter(s => s.level === lv).flatMap(s => studentSlots(s)))].sort();
-    slotSel.innerHTML = `<option value="">— choose —</option>` + slots.map(s => `<option>${escapeHtml(s)}</option>`).join("");
+  // Redrawn from `choices` on every change and on every snapshot, keeping what
+  // the student has already chosen while it is still on offer.
+  function paintSetup() {
+    const lvKeep = levelSel.value, slKeep = slotSel.value, nmKeep = nameSel.value;
+    const levelOpts = choices.levels.map(l => [l, l]);
+    if (choices.any) levelOpts.push([PICK_ANY_LEVEL, "Not sure — show every class"]);
+    const lv = levelOpts.some(o => o[0] === lvKeep) ? lvKeep : "";
+    levelSel.innerHTML = `<option value="">— choose —</option>` + levelOpts.map(o => option(o[0], o[1], lv)).join("");
+
+    const slots = choices.slotsFor(lv);
+    const sl = slots.includes(slKeep) ? slKeep : "";
+    slotSel.innerHTML = lv
+      ? `<option value="">— choose —</option>` + slots.map(s => option(s, s === PICK_NO_CLASS ? "No class listed" : s, sl)).join("")
+      : `<option value="">— choose level first —</option>`;
     slotSel.disabled = !lv;
-    nameSel.innerHTML = `<option value="">— choose slot first —</option>`; nameSel.disabled = true;
-    $("linkStudentBtn").disabled = true;
-  };
-  slotSel.onchange = () => {
-    const lv = levelSel.value, sl = slotSel.value;
-    const names = unclaimed.filter(s => s.level === lv && studentSlots(s).includes(sl));
-    nameSel.innerHTML = `<option value="">— choose —</option>` + names.map(s => `<option value="${s.id}">${escapeHtml(s.name)}</option>`).join("");
+
+    const names = choices.namesFor(sl);
+    const nm = names.some(n => n.id === nmKeep) ? nmKeep : "";
+    nameSel.innerHTML = sl
+      ? `<option value="">— choose —</option>` + names.map(n => option(n.id, n.label, nm)).join("")
+      : `<option value="">— choose slot first —</option>`;
     nameSel.disabled = !sl;
-    $("linkStudentBtn").disabled = true;
-  };
-  nameSel.onchange = () => { $("linkStudentBtn").disabled = !nameSel.value; };
+    $("linkStudentBtn").disabled = !nm;
+  }
+
+  levelSel.onchange = () => { slotSel.value = ""; nameSel.value = ""; paintSetup(); };
+  slotSel.onchange = () => { nameSel.value = ""; paintSetup(); };
+  nameSel.onchange = paintSetup;
+  paintSetup();
+
+  // Live, so a name the teacher adds while the student is waiting appears here
+  // without a reload. Torn down on sign-out with every other listener, and as
+  // soon as the account is linked.
+  const me = currentUser;
+  unsubSetup = db.collection("students").onSnapshot(snap => {
+    if (currentUser !== me) return;
+    const all = [];
+    snap.forEach(d => all.push({ id: d.id, ...d.data() }));
+    choices = setupChoices(all);
+    paintSetup();
+  }, e => {
+    console.error(e);
+    toast("Could not load the class lists: " + (e.message || e));
+  });
 
   $("linkStudentBtn").onclick = async () => {
     const id = nameSel.value; if (!id) return;
+    $("linkStudentBtn").disabled = true;
     try {
       await db.collection("students").doc(id).update({
         uid: currentUser.uid,
         email: currentUser.email
       });
       const doc = await db.collection("students").doc(id).get();
+      if (unsubSetup) { unsubSetup(); unsubSetup = null; }
       myStudent = { id: doc.id, ...doc.data() };
       hide($("setupView"));
       showStudentMain();
     } catch (e) {
+      $("linkStudentBtn").disabled = !nameSel.value;
       toast("Could not link: " + (e.message || e));
     }
   };
