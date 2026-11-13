@@ -2795,5 +2795,8 @@ function compressImage(file, maxDim, quality) {
 </script>
 <!-- 📲 The Polymath install kit (shared byte for byte with every Polymath app — see CLAUDE.md). A classic deferred script. -->
 <script defer src="pwa-install.js?v=2.0.0" data-app-name="Polymath Rewards" data-app-key="rewards" data-app-icon="assets/app-icons/icon-192.png" data-accent="#B26A00" data-sw="sw.js" data-floating="auto"></script>
+<!-- 🔐 Polymath student access (v1.0.0): the enrolment pop-up every Polymath app shares. A signed-in student is
+     blocked here until an admin approves them at polymathlc.com.sg/student/#admin. Source: polymathlc/cer student/access-gate.js -->
+<script defer src="https://polymathlc.github.io/cer/student/access-gate.js?v=1.0.0" data-app="rewards"></script>
 </body>
 </html>
